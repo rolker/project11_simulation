@@ -1,12 +1,31 @@
+from glob import glob
+import os
+from setuptools import find_packages, setup
 
-## ! DO NOT MANUALLY INVOKE THIS setup.py, USE CATKIN INSTEAD
+package_name = 'mbes_sim'
 
-from distutils.core import setup
-from catkin_pkg.python_setup import generate_distutils_setup
+setup(
+    name=package_name,
+    version='0.0.0',
+    packages=find_packages(exclude=['test']),
+    install_requires=['setuptools'],
+    zip_safe=True,
+    data_files=[
+        ('share/ament_index/resource_index/packages',
+            ['resource/' + package_name]),
+        ('share/' + package_name, ['package.xml']),
+        ('share/' + package_name + '/data', glob(os.path.join('data', '*.tiff'))),
+        (os.path.join('share', package_name, 'launch'), glob(os.path.join('launch', '*launch.[pxy][yma]*'))),
+        (os.path.join('share', package_name, 'config'), glob(os.path.join('config', '*.yaml')))
 
-# fetch values from package.xml
-setup_args = generate_distutils_setup(
-    packages=[],
-    package_dir={'': 'src'})
-
-setup(**setup_args)
+    ],
+    maintainer='Roland Arsenault',
+    maintainer_email='roland@ccom.unh.edu',
+    description='ROS2 Multibeam Echosounder simple simulator',
+    license='BSD',
+    entry_points={
+        'console_scripts': [
+            'mbes_sim = mbes_sim.mbes_sim:main',
+        ],
+    },
+)
