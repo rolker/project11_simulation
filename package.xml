@@ -9,6 +9,7 @@
   <license>BSD</license>
 
   <depend>geographic_msgs</depend>
+  <depend>marine_acoustic_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>sensor_msgs_py</depend>
   <depend>project11</depend>
