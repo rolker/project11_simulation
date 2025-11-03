@@ -195,23 +195,23 @@ def generate_launch_description():
             ]),
             GroupAction(
                 actions=[
-                  SetRemap(
-                    src='position',
-                    dst=PythonExpression( expression = [ '"/', 
+                  SetParameter(
+                    name='sensors.default.topics.position',
+                    value=PythonExpression( expression = [ '"/', 
                         namespace,
                         '/sensors/nav/position"'
                     ])
                   ),
-                  SetRemap(
-                      src='orientation',
-                      dst=PythonExpression( expression = [ '"/',
+                  SetParameter(
+                      name='sensors.default.topics.orientation',
+                      value=PythonExpression( expression = [ '"/',
                           namespace,
                           '/sensors/nav/orientation"'
                       ])
                   ),
-                  SetRemap(
-                      src='velocity',
-                      dst=PythonExpression( expression = [ '"/',
+                  SetParameter(
+                      name='sensors.default.topics.velocity',
+                      value=PythonExpression( expression = [ '"/',
                           namespace,
                           '/sensors/nav/velocity"'
                       ])
@@ -237,7 +237,7 @@ def generate_launch_description():
                   ),
                   SetParameter(
                     name='cell_size',
-                    value=0.5
+                    value=1.0
                   ),
                   IncludeLaunchDescription(
                       PythonLaunchDescriptionSource(
