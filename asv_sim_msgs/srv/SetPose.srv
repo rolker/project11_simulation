@@ -1,0 +1,5 @@
+# Service for setting the pose of the ASV in the simulator
+
+geographic_msgs/GeoPoseStamped pose
+---
+bool                           success

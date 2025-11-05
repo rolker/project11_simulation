@@ -1,0 +1,8 @@
+<launch>
+  <node pkg="asv_sim" exec="asv_sim">
+    <param from="$(find-pkg-share asv_sim)/config/cw4.yaml"/>
+    <param from="$(find-pkg-share asv_sim)/config/ben.yaml"/>
+    <param from="$(find-pkg-share asv_sim)/config/bob.yaml"/>
+    <param name="platforms" value="ben, bob" value-sep=","/>
+  </node>
+</launch>

@@ -1,0 +1,35 @@
+# Model for the C-Worker 4 ASV
+
+# Engine: 30 bHP -> *.4 for losses * 745 to watts = 8948.4
+# 3200 rpm: 30 bHP
+# Maximum output at crankshaft: 21.3 kW@3200 rpm
+# draft 0.4m
+# 4m long, 1.7 wide, and has a draft of 0.4 m.
+# Tonnage: 1 T
+# Top Speed:       5.5 knots (2.75 m/s)
+# Minimum survey speed:    1 knots
+# Propulsion:      1 x 30 HP Yanmar Diesel direct drive, 3YM-30E.
+
+# Jet drive: Alamarin AJ-160
+#   Graph for the Alamarin line shows power (kW) to RPM graph that looks like
+#   the equation is y=a(bx)^3 where x is rpm, y is power (kW), b is 1/5000 and
+#   a ranges from 80 to 120.
+#   Using a = 100, and rearanging to y=cx^3, c = 0.0000000008
+
+asv_sim:
+  ros__parameters:
+    models.cw4.max_rpm:                3200.0
+    models.cw4.max_power:              21300.0
+    models.cw4.idle_rpm:               750.0
+    models.cw4.clutch_engagement_rpm:  800.0
+    models.cw4.gearbox_ratio:          1.0
+    models.cw4.propulsion_type:        jet
+    models.cw4.bucket_efficiency:      0.2
+    models.cw4.max_bucket_change_rate: 0.5
+    models.cw4.max_rpm_change_rate:    1000.0    # FIX
+    models.cw4.max_speed:              2.75
+    models.cw4.mass:                   2000.0
+    models.cw4.max_rudder_angle:       33.0
+    models.cw4.max_rudder_change_rate: 30.0
+    models.cw4.max_turn_rate:          25.0
+    models.cw4.rudder_distance:        2.0

@@ -1,0 +1,8 @@
+asv_sim:
+  ros__parameters:
+    platforms.bob.model: cw4
+
+    # Portsmouth, New Hampshire, close to cod rock
+    platforms.bob.start_lat: 43.074
+    platforms.bob.start_lon: -70.711
+    platforms.bob.start_heading: 315.0

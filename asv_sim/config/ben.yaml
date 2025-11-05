@@ -1,0 +1,9 @@
+asv_sim:
+  ros__parameters:
+    platforms.ben.model: cw4
+    platforms.ben.mru_frame: ben/nav
+
+    # Portsmouth, New Hampshire, cod rock
+    platforms.ben.start_lat: 43.073397415457535
+    platforms.ben.start_lon: -70.71054174878898
+    platforms.ben.start_heading: 60.0

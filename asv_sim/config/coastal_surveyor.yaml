@@ -1,0 +1,25 @@
+# Engine: 200 bHP -> *.5 for losses * 745 to watts = 74500
+# 2400 rpm: 200 bHP
+# 2200 rpm: 185 bHP
+# draft 5.5ft
+# 40' (12.19m) long, 12' (3.66m) wide, and has a draft of 5.5' (1.8m).
+# Tonnage: 16 GRT, 11 DWT
+# Top Speed:       10 knots (5.14444444 m/s)
+# Minimum speed for full roll stabilization:       5 knots
+# Minimum survey speed:    2.5 knots
+# Propulsion:      1 x Caterpillar 3116; 200HP Marine Diesel; 2.57:1 reduction
+# prop pitch of 20 is just a random number for testing, mass is random as well
+
+asv_sim:
+  ros__parameters:
+    models.coastal_surveyor.max_rpm:              2400.0
+    models.coastal_surveyor.max_power:            74500.0
+    models.coastal_surveyor.idle_rpm:             100.0
+    models.coastal_surveyor.gearbox_ratio:        0.389105058
+    models.coastal_surveyor.prop_pitch:           20.0
+    models.coastal_surveyor.max_rpm_change_rate:  1000.0
+    models.coastal_surveyor.max_speed:            5.14444444
+    models.coastal_surveyor.mass:                 5000.0
+    models.coastal_surveyor.max_rudder_angle:     30.0
+    models.coastal_surveyor.rudder_distance:      6.0
+    models.coastal_surveyor.rudder_coefficient:   0.25

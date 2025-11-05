@@ -1,0 +1,39 @@
+# Model for the DriX
+
+# Engine: 38HP  Nanni N4.38
+# Power at crankshaft 27.6 kW (37.5hp)
+# Rated speed 3000 rpm
+# idle speed 850 rpm
+# Peak torque 96 Nm at 2200 rpm
+
+# Transmission ZF25A
+# ratio? guessing about 2.4? 1/2.4 = 0.417
+
+# Loaded weight: 1600kg (from specs)
+# measured weight: 1900kg
+# measured weight with water in gondola: 2200kg
+
+# Speed: min 2-5 knots/ max 14 knots
+# RPM Range Forward: 1000 to 3200
+#     Reverse: 800 to 1200
+# No reverse in autopilot mode
+# RPM under 1200 to switch between fwd, neutral or rev
+
+asv_sim:
+  ros__parameters:
+    models.drix.max_rpm:                3200.0
+    models.drix.max_power:              27600.0
+    models.drix.idle_rpm:               750.0
+    models.drix.clutch_engagement_rpm:  800.0
+    models.drix.gearbox_ratio:          0.417
+    models.drix.propulsion_type:        prop
+    models.drix.prop_pitch:             16.0
+    models.drix.max_rpm_change_rate:    1000.0
+    models.drix.max_speed:              7.0
+    models.drix.mass:                   2200.0
+
+    models.drix.rudder_distance:        3.4
+
+    models.drix.max_rudder_angle:       30.0
+    models.drix.max_rudder_change_rate: 90.0
+    models.drix.rudder_coefficient:     0.25

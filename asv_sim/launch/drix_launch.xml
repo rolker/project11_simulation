@@ -1,0 +1,7 @@
+<launch>
+  <node pkg="asv_sim" exec="asv_sim">
+    <param from="$(find-pkg-share asv_sim)/config/drix.yaml"/>
+    <param from="$(find-pkg-share asv_sim)/config/drix_2.yaml"/>
+    <param name="platforms" value="drix_2" value-sep=","/>
+  </node>
+</launch>
