@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>mbes_sim</name>
+  <version>0.0.0</version>
+  <description>The mbes_sim package</description>
+
+  <maintainer email="roland@ccom.unh.edu">roland</maintainer>
+
+  <license>BSD</license>
+
+  <depend>geographic_msgs</depend>
+  <depend>marine_acoustic_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>sensor_msgs_py</depend>
+  <depend>project11</depend>
+  <depend>python3-gdal</depend>
+  <depend>rclpy</depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
