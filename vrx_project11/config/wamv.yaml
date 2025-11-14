@@ -1,0 +1,37 @@
+/**/helm_manager:
+  ros__parameters:
+    output_type: 'twist'
+    max_yaw_speed: 0.74   
+    max_speed: 3.3
+
+
+
+/**/mru_transform:
+  ros__parameters:
+    sensors:
+      gazebo:
+        topics:
+          orientation: "sensors/imu/imu/data"
+          position: "sensors/gps/gps/fix"
+          velocity: "sensors/gps/gps/velocity"
+    sensor_names:
+    - gazebo
+
+/**/platform_sender:
+  ros__parameters:
+    width: 2.44
+    length: 4.85
+    color:
+      red: 0.4
+      green: 0.7
+      blue: 0.4
+
+    nav:
+      source_names:
+        - gazebo
+      sources:
+        gazebo:
+          topics:
+            orientation: "sensors/imu/imu/data"
+            position: "sensors/gps/gps/fix"
+            velocity: "sensors/gps/gps/velocity"

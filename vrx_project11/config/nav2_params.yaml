@@ -1,0 +1,234 @@
+
+bt_task_navigator:
+  ros__parameters:
+    global_frame: <tf_prefix>/map
+    robot_base_frame: <tf_prefix>/base_link
+    odom_topic: <robot_namespace>/odom
+    bt_loop_duration: 500
+    default_server_timeout: 20
+    wait_for_service_timeout: 1000
+    action_server_result_timeout: 900.0
+    navigators: ["run_tasks",]
+    run_tasks:
+      plugin: "marine_nav_bt_task_navigator::TaskNavigator"
+      debug: false
+    # plugin_lib_names is used to add custom BT plugins to the executor (vector of strings).
+    # Built-in plugins are added automatically
+    plugin_lib_names: 
+      - marine_nav_behavior_tree_bt_plugins
+
+
+    error_code_names:
+      - compute_path_error_code
+      - follow_path_error_code
+      - hover_error_code
+
+
+
+controller_server:
+  ros__parameters:
+    controller_frequency: 5.0
+    costmap_update_timeout: 15.0
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.5
+    min_theta_velocity_threshold: 0.001
+    failure_tolerance: 0.3
+    progress_checker_plugins: ["progress_checker"]
+    goal_checker_plugins: ["general_goal_checker"] # "precise_goal_checker"
+    controller_plugins: ["FollowPath"]
+    use_realtime_priority: false
+    enable_stamped_cmd_vel: true
+
+    # Progress checker parameters
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.5
+      movement_time_allowance: 30.0
+    # Goal checker parameters
+    #precise_goal_checker:
+    #  plugin: "nav2_controller::SimpleGoalChecker"
+    #  xy_goal_tolerance: 0.25
+    #  yaw_goal_tolerance: 0.25
+    #  stateful: True
+    general_goal_checker:
+      stateful: True
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 4.5
+      yaw_goal_tolerance: 5.0
+
+    FollowPath:
+      plugin: "marine_nav_crabbing_path_follower::CrabbingPathFollower"
+      default_speed: 2.75
+      visualization: true
+      pid: # outputs crab angle in degrees to minimize cross-track error in meters.
+        p: -6.0
+        i: -0.5
+        d: -0.6
+        i_clamp_max: 75.0
+        i_clamp_min: -75.0
+        u_clamp_max: 90.0
+        u_clamp_min: -90.0
+        error_deadband: 0.1
+        tracking_time_constant: 0.0
+
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      global_frame: <tf_prefix>/odom
+      robot_base_frame: <tf_prefix>/base_link
+      rolling_window: true
+      width: 250
+      height: 250
+      resolution: 0.25
+      footprint: "[[0.8, 0], [0.8, -0.85], [2.0, -0.85], [2.6, -0.9], [2.6, -1.1], [2.0, -1.15], [-3.0, -1.15], [-3.0, -0.85], [-1.0, -0.85], [-1.0, 0.85], [-3.0, 0.85], [-3.0, 1.15],[2.0, 1.15], [2.6, 1.1], [2.6, 0.9], [2.0, 0.85], [0.8, 0.85], [0.8, 0]]"
+      plugins: ["voxel_layer", "inflation_layer"]
+      voxel_layer:
+        plugin: "nav2_costmap_2d::VoxelLayer"
+        enabled: True
+        footprint_clearing_enabled: true
+        max_obstacle_height: 2.0
+        publish_voxel_map: True
+        origin_z: 0.0
+        z_resolution: 0.5
+        z_voxels: 16
+        unknown_threshold: 15
+        mark_threshold: 0
+        observation_sources: pointcloud
+        combination_method: 1
+        pointcloud:  # no frame set, uses frame from message
+          topic: <robot_namespace>/sensors/lidars/lidar_wamv_sensor/points
+          max_obstacle_height: 2.0
+          min_obstacle_height: 0.0
+          obstacle_max_range: 120.0
+          obstacle_min_range: 0.0
+          raytrace_max_range: 130.0
+          raytrace_min_range: 0.0
+          clearing: True
+          marking: True
+          data_type: "PointCloud2"
+          transport_type: "raw"  # raw or/ with compression (zlib, draco, zstd)
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 1.0
+        inflation_radius: 1.0
+
+
+      always_send_full_costmap: True
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: <tf_prefix>/map
+      robot_base_frame: <tf_prefix>/base_link
+      robot_radius: 3.0
+      #footprint: "[[2.65, 0], [2.6, 0.1], [2.4, 0.4], [1.9, 0.6], [1.0, 0.85], [-1.3, 0.85], [-1.35, 0.4], [-1.6, 0.35], [-1.6, -0.35], [-1.35, -0.4], [-1.3, -0.85], [1.0, -0.85], [1.9, -0.6], [2.4, -0.4], [2.6, -0.1], [2.65, 0]]"
+      resolution: 1.0
+      footprint_padding: 0.5
+      track_unknown_space: false
+      rolling_window: true
+      width: 5000
+      height: 5000
+      plugins: ["voxel_layer", "inflation_layer"]
+      voxel_layer:
+        plugin: "nav2_costmap_2d::VoxelLayer"
+        enabled: True
+        footprint_clearing_enabled: true
+        max_obstacle_height: 2.0
+        publish_voxel_map: True
+        origin_z: 0.0
+        z_resolution: 0.5
+        z_voxels: 16
+        unknown_threshold: 15
+        mark_threshold: 0
+        observation_sources: pointcloud
+        combination_method: 1
+        pointcloud:  # no frame set, uses frame from message
+          topic: <robot_namespace>/sensors/lidars/lidar_wamv_sensor/points
+          max_obstacle_height: 2.0
+          min_obstacle_height: 0.0
+          obstacle_max_range: 110.0
+          obstacle_min_range: 5.0
+          raytrace_max_range: 120.0
+          raytrace_min_range: 0.0
+          clearing: True
+          marking: True
+          data_type: "PointCloud2"
+          transport_type: "raw"  # raw or/ with compression (zlib, draco, zstd)
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 0.5
+        inflation_radius: 25.0
+      always_send_full_costmap: True
+
+
+planner_server:
+  ros__parameters:
+    expected_planner_frequency: 0.2
+    planner_plugins: ["GridBased"]
+    costmap_update_timeout: 15.0
+    GridBased:
+      plugin: "nav2_smac_planner::SmacPlannerHybrid"
+      tolerance: 1.5
+      allow_primitive_interpolation: true
+      allow_unknown: true
+      change_penalty: 0.0
+      cost_penalty: 10.0
+      minimum_turning_radius: 0.5
+      debug_visualizations: true
+      max_iterations: -1
+      max_on_approach_iterations: -1
+      max_planning_time: 5.0
+      analytic_expansion_max_length: 5.0
+      angle_quantization_bins: 72
+      lookup_table_size: 100.0
+      non_straight_penalty: 1.1
+      use_quadratic_cost_penalty: false
+      
+
+manda_coverage:
+  ros__parameters:
+    display_topic: "manda_coverage/display"
+
+behavior_server:
+  ros__parameters:
+    local_costmap_topic: local_costmap/costmap_raw
+    global_costmap_topic: global_costmap/costmap_raw
+    local_footprint_topic: local_costmap/published_footprint
+    global_footprint_topic: global_costmap/published_footprint
+    cycle_frequency: 10.0
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait", "hover"]
+    spin:
+      plugin: "nav2_behaviors::Spin"
+    backup:
+      plugin: "nav2_behaviors::BackUp"
+    drive_on_heading:
+      plugin: "nav2_behaviors::DriveOnHeading"
+    wait:
+      plugin: "nav2_behaviors::Wait"
+    assisted_teleop:
+      plugin: "nav2_behaviors::AssistedTeleop"
+    hover:
+      plugin: "marine_nav_behaviors::Hover"
+      minimum_radius: 1.0
+      maximum_radius: 2.5
+      maximum_speed: 1.0
+      minimum_speed: 0.15
+      maximum_rotation_speed: 1.5
+      deceleration: -0.45
+      generate_visualization: true
+
+    local_frame: <tf_prefix>/odom
+    global_frame: <tf_prefix>/map
+    robot_base_frame: <tf_prefix>/base_link
+    transform_tolerance: 0.1
+    simulate_ahead_time: 2.0
+    max_rotational_vel: 1.0
+    min_rotational_vel: 0.4
+    rotational_acc_lim: 3.2
+    enable_stamped_cmd_vel: true
+
