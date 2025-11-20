@@ -97,6 +97,11 @@ def generate_launch_description():
                         ),
                     ]
                 ),
+                Node(
+                    package="ros_gz_bridge",
+                    executable="parameter_bridge",
+                    name="mbes_bridge",
+                )
             ]
         ),
         IncludeLaunchDescription(

@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<!-- Includes all macros in this package so they don't need to be included individualy -->
+<robot xmlns:xacro="http://ros.org/wiki/xacro"
+       name="WAM-V">
+  <!-- Include stock macros-->       
+  <xacro:include filename="$(find wamv_gazebo)/urdf/macros.xacro" />
+
+  <!-- Include extra sensor macros -->
+  <xacro:include filename="$(find vrx_project11)/urdf/components/wamv_multibeam_sonar.xacro" />
+
+</robot>

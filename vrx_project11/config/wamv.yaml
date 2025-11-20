@@ -4,6 +4,19 @@
     max_yaw_speed: 0.74   
     max_speed: 3.3
 
+/**/mbes_bridge:
+  ros__parameters:
+    bridge_names:
+      - multibeam_sonar_pointcloud
+    bridges:
+      multibeam_sonar_pointcloud:
+        gz_topic_name: /wamv/multibeam_sonar/sonar_data/point_cloud
+        ros_topic_name: "sensors/multibeam_sonar/points"
+        gz_type_name: gz.msgs.PointCloudPacked
+        ros_type_name: sensor_msgs/msg/PointCloud2
+        direction: "GZ_TO_ROS"
+        lazy: false
+
 
 
 /**/mru_transform:
