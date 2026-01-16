@@ -12,7 +12,7 @@ def generate_launch_description():
     return LaunchDescription([
         SetParametersFromFile(
             PathJoinSubstitution([
-                FindPackageShare('project11_simulation'),
+                FindPackageShare('marine_simulation'),
                 'config',
                 'udp_bridge.yaml'
             ])

@@ -10,7 +10,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         LifecycleNode(
-            package='vrx_project11',
+            package='vrx_marine_autonomy',
             executable='wamv_helm',
             name='wamv_helm',
             namespace='',

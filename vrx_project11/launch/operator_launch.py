@@ -34,7 +34,7 @@ def generate_launch_description():
             value=True
         ),
         IncludeLaunchDescription(
-            PythonLaunchDescriptionSource([FindPackageShare('project11'), '/launch/operator_core_launch.py']),
+            PythonLaunchDescriptionSource([FindPackageShare('marine_autonomy'), '/launch/operator_core_launch.py']),
             launch_arguments={
                 'robot_namespace': robot_namespace,
                 'enable_bridge': 'false'
@@ -46,7 +46,7 @@ def generate_launch_description():
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(
                         PathJoinSubstitution([
-                            FindPackageShare('project11'),
+                            FindPackageShare('marine_autonomy'),
                             'launch',
                             'operator_ui_launch.py'
                         ])

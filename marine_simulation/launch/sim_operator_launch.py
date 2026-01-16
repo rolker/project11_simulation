@@ -55,7 +55,7 @@ def generate_launch_description():
   launch_operator_core_include = IncludeLaunchDescription(
     PythonLaunchDescriptionSource(
       PathJoinSubstitution([
-        get_package_share_directory('project11'),
+        get_package_share_directory('marine_autonomy'),
         'launch',
         'operator_core_launch.py'
       ])
@@ -71,7 +71,7 @@ def generate_launch_description():
   launch_operator_ui_include = IncludeLaunchDescription(
     PythonLaunchDescriptionSource(
       PathJoinSubstitution([
-        get_package_share_directory('project11'),
+        get_package_share_directory('marine_autonomy'),
         'launch',
         'operator_ui_launch.py'
       ])

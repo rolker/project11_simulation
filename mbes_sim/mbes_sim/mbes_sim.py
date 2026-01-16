@@ -20,7 +20,7 @@ from sensor_msgs.msg import PointCloud2
 from sensor_msgs.msg import PointField
 
 import math
-import project11
+import marine_autonomy
 from ament_index_python import get_package_share_directory
 import pathlib
 
@@ -56,7 +56,7 @@ class SonarSim(Node):
         self.get_logger().debug(f'opening grid_file: {grid_file}')
         self.bathy = BathyGrid(grid_file)
         self.get_logger().debug('initializing robot')
-        self.robot = project11.nav.RobotNavigation(self)
+        self.robot = marine_autonomy.nav.RobotNavigation(self)
         self.ping_rate = self.get_parameter('ping_interval').get_parameter_value().double_value
         ping_rate = self.ping_rate
         if ping_rate <= 0.0:
@@ -149,8 +149,8 @@ class SonarSim(Node):
             if heading is not None:
                 swath_half_width = depth*tan_half_swath_angle
                 #print 'swath half width:',swath_half_width
-                port_outer_beam_location = project11.geodesic.direct(lon_rad, lat_rad, math.radians(heading-90),swath_half_width)
-                starboard_outer_beam_location = project11.geodesic.direct(lon_rad, lat_rad, math.radians(heading+90),swath_half_width)
+                port_outer_beam_location = marine_autonomy.geodesic.direct(lon_rad, lat_rad, math.radians(heading-90),swath_half_width)
+                starboard_outer_beam_location = marine_autonomy.geodesic.direct(lon_rad, lat_rad, math.radians(heading+90),swath_half_width)
                 #print 'outer beam locations:',port_outer_beam_location,starboard_outer_beam_location
                 port_outer_beam_location_xy = self.bathy.getXY(math.degrees(port_outer_beam_location[1]), math.degrees(port_outer_beam_location[0]))
                 starboard_outer_beam_location_xy = self.bathy.getXY(math.degrees(starboard_outer_beam_location[1]), math.degrees(starboard_outer_beam_location[0]))

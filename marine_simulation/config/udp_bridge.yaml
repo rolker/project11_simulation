@@ -16,22 +16,22 @@
             maximum_bytes_per_second: 50000
             topics_list:
             - odom
-            - project11-heartbeat
-            - project11-nav-orientation
-            - project11-nav-position
-            - project11-nav-velocity
-            - project11-platforms
-            - project11-response
-            - project11-status-mission-manager
+            - marine_autonomy-heartbeat
+            - marine_autonomy-nav-orientation
+            - marine_autonomy-nav-position
+            - marine_autonomy-nav-velocity
+            - marine_autonomy-platforms
+            - marine_autonomy-response
+            - marine_autonomy-status-mission-manager
             topics:
               odom: {source: odom}
-              project11-heartbeat: {source: project11/heartbeat}
-              project11-nav-orientation: {source: project11/nav/orientation}
-              project11-nav-position: {source: project11/nav/position}
-              project11-nav-velocity: {source: project11/nav/velocity}
-              project11-platforms: {source: /project11/platforms}
-              project11-response: {source: project11/response}
-              project11-status-mission-manager: {source: project11/status/mission_manager}
+              marine_autonomy-heartbeat: {source: marine/heartbeat}
+              marine_autonomy-nav-orientation: {source: marine/nav/orientation}
+              marine_autonomy-nav-position: {source: marine/nav/position}
+              marine_autonomy-nav-velocity: {source: marine/nav/velocity}
+              marine_autonomy-platforms: {source: /marine/platforms}
+              marine_autonomy-response: {source: marine/response}
+              marine_autonomy-status-mission-manager: {source: marine/status/mission_manager}
 
 /operator/udp_bridge:
   ros__parameters:

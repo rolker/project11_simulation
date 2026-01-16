@@ -70,7 +70,7 @@ def generate_launch_description():
   # launch_drix_core_include = IncludeLaunchDescription(
   #   PythonLaunchDescriptionSource(
   #     os.path.join(
-  #       get_package_share_directory('drix_project11'),
+  #       get_package_share_directory('drix_marine_autonomy'),
   #       "launch/drix_core_launch.py"
   #     )
   #   ),
@@ -88,8 +88,8 @@ def generate_launch_description():
   asv_helm_group = GroupAction(
     actions=[
       PushROSNamespace(namespace),
-      SetRemap(src='helm', dst='project11/control/helm'),
-      SetRemap(src='cmd_vel', dst='project11/control/cmd_vel'),
+      SetRemap(src='helm', dst='marine/control/helm'),
+      SetRemap(src='cmd_vel', dst='marine/control/cmd_vel'),
       SetRemap(src='throttle', dst='control/throttle'),
       SetRemap(src='rudder', dst='control/rudder'),
       SetRemap(src='have_commands', dst=PathJoinSubstitution(['/asv_sim', sim_name, 'have_commands'])),
@@ -258,9 +258,9 @@ def generate_launch_description():
 
   # <node if="$(arg sim_traffic)" pkg="traffic_sim" type="traffic_sim_node.py" name="traffic_sim" ns="$(arg namespace)"/>
 
-  # <rosparam unless="$(arg drix)" command="load" file="$(find ben_project11)/config/ben_sim.yaml" ns="$(arg namespace)"/>
+  # <rosparam unless="$(arg drix)" command="load" file="$(find ben_marine_autonomy)/config/ben_sim.yaml" ns="$(arg namespace)"/>
 
-  # <rosparam if="$(arg drix)" command="load" file="$(find drix_project11)/config/drix_sim.yaml" ns="$(arg namespace)"/>
+  # <rosparam if="$(arg drix)" command="load" file="$(find drix_marine_autonomy)/config/drix_sim.yaml" ns="$(arg namespace)"/>
 
   # <param if="$(arg enableBridge)" name="/$(arg namespace)/udp_bridge/remotes/operator/connections/default/host" value="$(arg operator_host)"/>
   # <param if="$(arg enableBridge)" name="/$(arg namespace)/udp_bridge/remotes/operator/connections/default/port" value="$(arg operator_port)"/>

@@ -6,9 +6,9 @@
   <remap from="/bob/throttle" to="/bob/control/throttle"/>
   <remap from="/bob/rudder" to="/bob/control/rudder"/>
 
-  <include file="$(find project11_simulation)/launch/sim_local.launch"/>
+  <include file="$(find marine_simulation)/launch/sim_local.launch"/>
 
-  <include file="$(find project11_simulation)/launch/sim_robot.launch">
+  <include file="$(find marine_simulation)/launch/sim_robot.launch">
     <arg name="namespace" value="bob"/>
     <arg name="no_sim" value="true"/>
   </include>
@@ -21,7 +21,7 @@
 
   <rosparam file="$(find asv_sim)/config/bob.yaml" ns="asv_sim"/>
 
-  <rosparam file="$(find project11_simulation)/config/bob_platform.yaml" ns="bob"/>
+  <rosparam file="$(find marine_simulation)/config/bob_platform.yaml" ns="bob"/>
 
   <rosparam command="load" file="$(find ben_project11)/config/ben_sim.yaml" ns="bob"/>
 

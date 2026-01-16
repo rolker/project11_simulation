@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14.4)
-project(project11_simulation)
+project(marine_simulation)
 
 find_package(ament_cmake REQUIRED)
 

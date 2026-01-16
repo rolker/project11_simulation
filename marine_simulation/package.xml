@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>project11_simulation</name>
+  <name>marine_simulation</name>
   <version>0.0.0</version>
   <description>
     Project11 packages related robot simulation
@@ -16,7 +16,7 @@
   <exec_depend>asv_sim</exec_depend>
   <exec_depend>cube_bathymetry</exec_depend>
   <exec_depend>grid_map_rviz_plugin</exec_depend>
-  <exec_depend>project11</exec_depend>
+  <exec_depend>marine_autonomy</exec_depend>
   <exec_depend>mbes_sim</exec_depend>
   <exec_depend>rviz2</exec_depend>
 

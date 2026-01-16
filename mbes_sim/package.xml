@@ -12,7 +12,7 @@
   <depend>marine_acoustic_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>sensor_msgs_py</depend>
-  <depend>project11</depend>
+  <depend>marine_autonomy</depend>
   <depend>python3-gdal</depend>
   <depend>rclpy</depend>
 
