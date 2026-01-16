@@ -1,5 +1,5 @@
 <launch>
-  <arg name="namespace" default="project11/drix_2"/>
+  <arg name="namespace" default="marine/drix_2"/>
   <arg name="sim_name" default="drix_2"/>
   <arg name="operator_namespace" default="operator"/>
   <arg name="sim_traffic" default="false"/>
@@ -9,7 +9,7 @@
 
   <param if="$(arg use_sim_time)" name="/use_sim_time" type="bool" value="true"/>
 
-  <include file="$(find project11_simulation)/launch/sim_robot.launch">
+  <include file="$(find marine_simulation)/launch/sim_robot.launch">
     <arg name="namespace" value="$(arg namespace)"/>
     <arg name="sim_name" value="$(arg sim_name)"/>
     <arg name="enableBridge" value="false"/>
@@ -18,7 +18,7 @@
     <arg name="drix" value="true"/>
   </include>
   
-  <include file="$(find project11_simulation)/launch/sim_operator.launch">
+  <include file="$(find marine_simulation)/launch/sim_operator.launch">
     <arg name="namespace" value="$(arg namespace)"/>
     <arg name="operator_namespace" value="$(arg operator_namespace)"/>
     <arg name="enableBridge" value="false"/>
@@ -36,7 +36,7 @@
   </group>
  
 
-  <rosparam param="project11/platforms/$(arg sim_name)/nav_sources/nav" ns="$(arg namespace)" subst_value="True">{position_topic: /$(arg namespace)/sensors/nav/position, orientation_topic: /$(arg namespace)/sensors/nav/orientation, velocity_topic: /$(arg namespace)/sensors/nav/velocity}</rosparam>
+  <rosparam param="marine/platforms/$(arg sim_name)/nav_sources/nav" ns="$(arg namespace)" subst_value="True">{position_topic: /$(arg namespace)/sensors/nav/position, orientation_topic: /$(arg namespace)/sensors/nav/orientation, velocity_topic: /$(arg namespace)/sensors/nav/velocity}</rosparam>
 
 
 </launch>

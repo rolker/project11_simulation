@@ -34,7 +34,7 @@ from nav2_common.launch import ReplaceString, RewrittenYaml
 
 def generate_launch_description():
     # Get the launch directory
-    bringup_dir = get_package_share_directory('vrx_project11')
+    bringup_dir = get_package_share_directory('vrx_marine_autonomy')
     launch_dir = os.path.join(bringup_dir, 'launch')
 
     # Create the launch configuration variables

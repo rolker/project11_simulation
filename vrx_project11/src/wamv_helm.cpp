@@ -2,7 +2,7 @@
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "std_msgs/msg/float64.hpp"
 #include "std_msgs/msg/bool.hpp"
-#include "project11_msgs/msg/heartbeat.hpp"
+#include "marine_interfaces/msg/heartbeat.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
@@ -33,7 +33,7 @@ public:
     left_position_publisher_ = create_publisher<std_msgs::msg::Float64>("thrusters/left/pos",1);
     right_position_publisher_ = create_publisher<std_msgs::msg::Float64>("thrusters/right/pos",1);
 
-    status_publisher_ = create_publisher<project11_msgs::msg::Heartbeat>("project11/status/helm",1);
+    status_publisher_ = create_publisher<marine_interfaces::msg::Heartbeat>("marine_autonomy/status/helm",1);
 
     twist_subscription_ = create_subscription<geometry_msgs::msg::TwistStamped>("cmd_vel", 10, std::bind(&WAMVHelm::twist_callback, this, std::placeholders::_1));
     joint_states_subscription_ = create_subscription<sensor_msgs::msg::JointState>("joint_states", 5, std::bind(&WAMVHelm::joint_states_callback, this, std::placeholders::_1));
@@ -79,34 +79,34 @@ private:
   {
     if(last_status_time_.nanoseconds() == 0 || rclcpp::Time(msg.header.stamp) - last_status_time_ >= status_interval_)
     {
-      project11_msgs::msg::Heartbeat status_msg;
+      marine_interfaces::msg::Heartbeat status_msg;
       status_msg.header = msg.header;
       for(std::size_t i = 0; i < msg.name.size(); ++i)
       {
         if(msg.name[i] == "wamv/left_chassis_engine_joint")
         {
-          project11_msgs::msg::KeyValue kv;
+          marine_interfaces::msg::KeyValue kv;
           kv.key = "left_angle";
           kv.value = std::to_string(msg.position[i]);
           status_msg.values.push_back(kv);
         }
         else if(msg.name[i] == "wamv/right_chassis_engine_joint")
         {
-          project11_msgs::msg::KeyValue kv;
+          marine_interfaces::msg::KeyValue kv;
           kv.key = "right_angle";
           kv.value = std::to_string(msg.position[i]);
           status_msg.values.push_back(kv);
         }
         else if(msg.name[i] == "wamv/left_engine_propeller_joint")
         {
-          project11_msgs::msg::KeyValue kv;
+          marine_interfaces::msg::KeyValue kv;
           kv.key = "left_speed";
           kv.value = std::to_string(msg.velocity[i]);
           status_msg.values.push_back(kv);
         }
         else if(msg.name[i] == "wamv/right_engine_propeller_joint")
         {
-          project11_msgs::msg::KeyValue kv;
+          marine_interfaces::msg::KeyValue kv;
           kv.key = "right_speed";
           kv.value = std::to_string(msg.velocity[i]);
           status_msg.values.push_back(kv);
@@ -145,7 +145,7 @@ private:
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr left_position_publisher_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr right_position_publisher_;
 
-  rclcpp::Publisher<project11_msgs::msg::Heartbeat>::SharedPtr status_publisher_;
+  rclcpp::Publisher<marine_interfaces::msg::Heartbeat>::SharedPtr status_publisher_;
 
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_subscription_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_states_subscription_;

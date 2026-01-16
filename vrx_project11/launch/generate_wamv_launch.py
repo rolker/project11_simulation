@@ -19,12 +19,12 @@ def generate_launch_description():
             ),
             launch_arguments={
                 'component_yaml': PathJoinSubstitution([
-                    FindPackageShare('vrx_project11'),
+                    FindPackageShare('vrx_marine_autonomy'),
                     'config', 'wamv_config', 'component_config.yaml'
                 ]),
                 'wamv_target': LaunchConfiguration('wamv_target'),
                 'alternative_macros_file': PathJoinSubstitution([
-                    FindPackageShare('vrx_project11'),
+                    FindPackageShare('vrx_marine_autonomy'),
                     'urdf', 'macros.xacro'
                 ]),
             }.items()

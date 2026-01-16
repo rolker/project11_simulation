@@ -1,9 +1,9 @@
 asv_sim:
   ros__parameters:
     platforms.drix_2.model:     drix
-    platforms.drix_2.namespace: project11/drix_2
+    platforms.drix_2.namespace: marine_autonomy/drix_2
 
-    platforms.drix_2.mru_frame: project11/drix_2/nav
+    platforms.drix_2.mru_frame: marine_autonomy/drix_2/nav
 
     # Seamounts south of Hawaii
     platforms.drix_2.start_lat: 18.72539

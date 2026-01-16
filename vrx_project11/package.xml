@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>vrx_project11</name>
+  <name>vrx_marine_autonomy</name>
   <version>0.0.0</version>
-  <description>The vrx_project11 package</description>
+  <description>The vrx_marine_autonomy package</description>
 
   <maintainer email="roland@ccom.unh.edu">Roland Arsenault</maintainer>
 
@@ -12,7 +12,7 @@
 
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
-  <depend>project11_msgs</depend>
+  <depend>marine_interfaces</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_lifecycle</depend>
   <depend>sensor_msgs</depend>

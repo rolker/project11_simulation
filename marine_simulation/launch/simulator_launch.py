@@ -30,7 +30,7 @@ def generate_launch_description():
   launch_sim_robot_include = IncludeLaunchDescription(
     PythonLaunchDescriptionSource(
       PathJoinSubstitution([
-        FindPackageShare('project11_simulation'),
+        FindPackageShare('marine_simulation'),
         'launch',
         'sim_robot_launch.py'
       ])
@@ -53,7 +53,7 @@ def generate_launch_description():
       IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
           PathJoinSubstitution([
-            FindPackageShare('project11_simulation'),
+            FindPackageShare('marine_simulation'),
             'launch',
             'sim_operator_launch.py'
           ])
@@ -75,7 +75,7 @@ def generate_launch_description():
       IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
           PathJoinSubstitution([
-            FindPackageShare('project11_simulation'),
+            FindPackageShare('marine_simulation'),
             'launch',
             'udp_bridge_launch.py'
           ])

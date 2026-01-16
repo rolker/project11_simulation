@@ -1,6 +1,6 @@
 <launch>
   <arg name="namespace" default="ben"/>
-  <include file="$(find project11_simulation)/launch/sim_dual.launch">
+  <include file="$(find marine_simulation)/launch/sim_dual.launch">
     <!-- <arg name="namespace" value="$(arg namespace)"/> -->
   </include>
   <rosparam file="$(find orbit)/config/orbit.yaml" command="load" ns="$(arg namespace)/navigator"/>

@@ -7,9 +7,9 @@
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "std_msgs/msg/float32.hpp"
 #include "std_msgs/msg/bool.hpp"
-#include "project11_msgs/msg/helm.hpp"
-#include "project11_msgs/msg/heartbeat.hpp"
-#include "project11/pid.h"
+#include "marine_interfaces/msg/helm.hpp"
+#include "marine_interfaces/msg/heartbeat.hpp"
+#include "marine_autonomy/pid.h"
 #include "nav_msgs/msg/odometry.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
 
@@ -28,9 +28,9 @@ public:
   {
     throttle_publisher_ = create_publisher<std_msgs::msg::Float32>("throttle",1);
     rudder_publisher_ = create_publisher<std_msgs::msg::Float32>("rudder",1);
-    status_publisher_ = create_publisher<project11_msgs::msg::Heartbeat>("project11/status/helm",1);
+    status_publisher_ = create_publisher<marine_interfaces::msg::Heartbeat>("marine_autonomy/status/helm",1);
 
-    helm_subscription_ = create_subscription<project11_msgs::msg::Helm>("helm", 1, std::bind(&ASVHelm::helmCallback, this, std::placeholders::_1));
+    helm_subscription_ = create_subscription<marine_interfaces::msg::Helm>("helm", 1, std::bind(&ASVHelm::helmCallback, this, std::placeholders::_1));
     twist_subscription_ = create_subscription<geometry_msgs::msg::TwistStamped>("cmd_vel", 10, std::bind(&ASVHelm::twistCallback, this, std::placeholders::_1));
     odom_subscription_ = create_subscription<nav_msgs::msg::Odometry>("odom", 5, std::bind(&ASVHelm::odometryCallback, this, std::placeholders::_1));
 
@@ -40,7 +40,7 @@ public:
   }
 
 private:
-  void helmCallback(const project11_msgs::msg::Helm& msg)
+  void helmCallback(const marine_interfaces::msg::Helm& msg)
   {
     std_msgs::msg::Float32 throttle_msg;
     throttle_msg.data = msg.throttle;
@@ -57,7 +57,7 @@ private:
     if(rclcpp::Time(msg.header.stamp) - rclcpp::Time(latest_odometry_.header.stamp) < rclcpp::Duration::from_seconds(1.0))
     {
       if(!pid_)
-        pid_ = std::make_shared<project11::PID>(shared_from_this());
+        pid_ = std::make_shared<marine::PID>(shared_from_this());
 
       pid_->setPoint(msg.twist.linear.x);
       throttle_msg.data = pid_->update(latest_odometry_.twist.twist.linear.x, latest_odometry_.header.stamp);
@@ -89,9 +89,9 @@ private:
 
   void haveCommandsCallback(const std_msgs::msg::Bool& msg)
   {
-    project11_msgs::msg::Heartbeat hb;
+    marine_interfaces::msg::Heartbeat hb;
     hb.header.stamp = get_clock()->now();
-    project11_msgs::msg::KeyValue kv;
+    marine_interfaces::msg::KeyValue kv;
     kv.key = "sim";
     kv.value = "asv_sim";
     hb.values.push_back(kv);
@@ -107,16 +107,16 @@ private:
 
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr throttle_publisher_;
   rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr rudder_publisher_;
-  rclcpp::Publisher<project11_msgs::msg::Heartbeat>::SharedPtr status_publisher_;
+  rclcpp::Publisher<marine_interfaces::msg::Heartbeat>::SharedPtr status_publisher_;
 
-  rclcpp::Subscription<project11_msgs::msg::Helm>::SharedPtr helm_subscription_;
+  rclcpp::Subscription<marine_interfaces::msg::Helm>::SharedPtr helm_subscription_;
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr twist_subscription_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_subscription_;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr have_commands_subscription_;
 
 
   nav_msgs::msg::Odometry latest_odometry_;
-  std::shared_ptr<project11::PID> pid_;
+  std::shared_ptr<marine::PID> pid_;
   double max_speed_ = 2.75;
   double max_yaw_speed_ = 0.5;
 };

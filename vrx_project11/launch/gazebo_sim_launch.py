@@ -11,7 +11,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'urdf',
             default_value=PathJoinSubstitution([
-                FindPackageShare('vrx_project11'),
+                FindPackageShare('vrx_marine_autonomy'),
                 'urdf', 'wamv.urdf'
             ]),
             description='URDF file to use for the robot'),

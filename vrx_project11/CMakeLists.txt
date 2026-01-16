@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.8)
 
-project(vrx_project11)
+project(vrx_marine_autonomy)
 
 set(CMAKE_CXX_STANDARD 17)
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -11,7 +11,7 @@ find_package(ament_cmake REQUIRED)
 
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
-find_package(project11_msgs REQUIRED)
+find_package(marine_interfaces REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(sensor_msgs REQUIRED)
@@ -22,7 +22,7 @@ add_executable(wamv_helm src/wamv_helm.cpp)
 ament_target_dependencies(wamv_helm
   geometry_msgs
   nav_msgs
-  project11_msgs
+  marine_interfaces
   rclcpp
   rclcpp_lifecycle
   std_msgs
