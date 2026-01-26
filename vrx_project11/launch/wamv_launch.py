@@ -89,7 +89,7 @@ def generate_launch_description():
                         IncludeLaunchDescription(
                             PythonLaunchDescriptionSource(
                                 PathJoinSubstitution([
-                                    FindPackageShare('vrx_marine_autonomy'),
+                                    FindPackageShare('vrx_project11'),
                                     'launch',
                                     'wamv_helm_launch.py'
                                 ])
