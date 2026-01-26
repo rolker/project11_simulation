@@ -35,7 +35,7 @@ def generate_launch_description():
                 PushROSNamespace(namespace),
                 SetParametersFromFile(
                     filename=PathJoinSubstitution([
-                        FindPackageShare('vrx_marine_autonomy'),
+                        FindPackageShare('vrx_project11'),
                         'config',
                         'wamv.yaml'
                     ])
@@ -89,7 +89,7 @@ def generate_launch_description():
                         IncludeLaunchDescription(
                             PythonLaunchDescriptionSource(
                                 PathJoinSubstitution([
-                                    FindPackageShare('vrx_marine_autonomy'),
+                                    FindPackageShare('vrx_project11'),
                                     'launch',
                                     'wamv_helm_launch.py'
                                 ])
@@ -107,7 +107,7 @@ def generate_launch_description():
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 PathJoinSubstitution([
-                    FindPackageShare('vrx_marine_autonomy'),
+                    FindPackageShare('vrx_project11'),
                     'launch',
                     'nav2_bringup_launch.py'
                 ])
