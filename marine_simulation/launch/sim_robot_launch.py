@@ -263,8 +263,7 @@ def generate_launch_description():
                                             'cube_bathymetry'
                                         ),
                                         'launch',
-                                        'detections_to_pointcloud'
-                                        '_launch.py'
+                                        'detections_to_pointcloud_launch.py'
                                     ])
                                 )
                             ),
