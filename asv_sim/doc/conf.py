@@ -21,9 +21,13 @@
 # sys.path.insert(0, os.path.abspath('.'))
 
 import os
+
 import catkin_pkg.package
-catkin_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) 
-catkin_package = catkin_pkg.package.parse_package(os.path.join(catkin_dir, catkin_pkg.package.PACKAGE_MANIFEST_FILENAME))
+
+catkin_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+catkin_package = catkin_pkg.package.parse_package(
+    os.path.join(catkin_dir,
+                 catkin_pkg.package.PACKAGE_MANIFEST_FILENAME))
 
 
 # -- General configuration ------------------------------------------------
@@ -35,12 +39,14 @@ catkin_package = catkin_pkg.package.parse_package(os.path.join(catkin_dir, catki
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ['sphinx.ext.autodoc',
+extensions = [
+    'sphinx.ext.autodoc',
     'sphinx.ext.doctest',
     'sphinx.ext.intersphinx',
     'sphinx.ext.todo',
     'sphinx.ext.coverage',
-    'sphinx.ext.viewcode']
+    'sphinx.ext.viewcode',
+]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['.templates']
@@ -56,7 +62,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'asv_sim'
-copyright = u'2020, Roland Arsenault'
+copyright = u'2020, Roland Arsenault'  # noqa: A001
 author = u'Roland Arsenault'
 
 # The version info for the project you're documenting, acts as replacement for
@@ -64,9 +70,9 @@ author = u'Roland Arsenault'
 # built documents.
 #
 # The short X.Y version.
-#version = u''
+# version = u''
 # The full version, including alpha/beta/rc tags.
-#release = u''
+# release = u''
 
 version = catkin_package.version
 release = catkin_package.version
@@ -176,8 +182,6 @@ texinfo_documents = [
      author, 'asv_sim', 'One line description of project.',
      'Miscellaneous'),
 ]
-
-
 
 
 # Example configuration for intersphinx: refer to the Python standard library.
