@@ -1,0 +1,29 @@
+<package format="2">
+  <name>marine_simulation_tests</name>
+  <version>0.0.0</version>
+  <description>End-to-end simulation tests for the marine autonomy stack</description>
+  <maintainer email="roland@ccom.unh.edu">Roland Arsenault</maintainer>
+
+  <license>BSD-3-Clause</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>launch_testing_ros</test_depend>
+  <test_depend>launch_ros</test_depend>
+  <test_depend>marine_simulation</test_depend>
+  <test_depend>mission_manager</test_depend>
+  <test_depend>helm_manager</test_depend>
+  <test_depend>marine_interfaces</test_depend>
+  <test_depend>sensor_msgs</test_depend>
+  <test_depend>std_msgs</test_depend>
+  <test_depend>python3-pytest</test_depend>
+  <test_depend>rclpy</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+
+</package>

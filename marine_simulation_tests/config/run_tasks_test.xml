@@ -1,0 +1,356 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Simplified behavior tree for end-to-end testing.
+
+  Based on marine_nav_bt_task_navigator's run_tasks.xml but with the
+  SonarCoverageTask removed to avoid requiring the compute_sonar_coverage_path
+  action server (provided by manda_coverage, which isn't part of the sim stack).
+
+  The SurveyAreaTask subtree is simplified to just run sub-tasks without
+  calling the sonar coverage planner.
+-->
+<root BTCPP_format="4"
+      main_tree_to_execute="NavigatorSequence">
+  <BehaviorTree ID="CancelAllNavigation">
+    <Sequence>
+      <ForceSuccess>
+        <CancelHover name="CancelHoverBeforeGotoPose"
+                     server_timeout="1000"
+                     server_name="hover"/>
+      </ForceSuccess>
+      <ForceSuccess>
+        <CancelFollowPath server_timeout="1000"
+                          server_name="follow_path"/>
+      </ForceSuccess>
+    </Sequence>
+  </BehaviorTree>
+
+  <BehaviorTree ID="GotoPose">
+    <Sequence name="GotoPoseSequence">
+      <SubTree ID="NavigateThroughWaypoints"
+               error_code_id="{navigate_through_poses_error_code}"
+               server_timeout="{server_timeout}"
+               wait_for_service_timeout="{wait_for_service_timeout}"
+               bt_loop_duration="{bt_loop_duration}"
+               behavior_tree=""
+               goals="{goal_poses}"
+               _autoremap="true"/>
+    </Sequence>
+  </BehaviorTree>
+
+  <BehaviorTree ID="GotoTask">
+    <ReactiveSequence name="GotoTaskReactiveSequence">
+      <ScriptCondition code="current_task_type == &apos;goto&apos;"/>
+      <Sequence name="GotoPoseAndSetDoneSequence">
+        <SetPathFromTask end_index="-1"
+                         path="{goal_poses}"
+                         start_index="0"
+                         task="{current_task}"/>
+        <SubTree ID="GotoPose"
+                 _autoremap="true"/>
+        <SetTaskDone name="SetGotoTaskDone"
+                     task="{current_task}"/>
+      </Sequence>
+    </ReactiveSequence>
+  </BehaviorTree>
+
+  <BehaviorTree ID="HoverTask">
+    <ReactiveSequence>
+      <ScriptCondition code="current_task_type == &apos;hover&apos;"/>
+      <SequenceWithMemory>
+        <Fallback name="SetHoverGoalFallback">
+          <Inverter>
+            <SetPathFromTask end_index="-1"
+                             path="{goal_poses}"
+                             start_index="0"
+                             task="{current_task}"/>
+          </Inverter>
+          <IfThenElse>
+            <PathEmptyCondition path="{goal_poses}"/>
+            <AlwaysSuccess/>
+            <SubTree ID="GotoPose"
+                     _autoremap="true"/>
+          </IfThenElse>
+        </Fallback>
+        <Script code="navigation_state := &quot;hover&quot;"/>
+        <Hover maximum_distance="0.000000"
+               maximum_speed="0.000000"
+               error_code_id="{hover_error_code}"
+               server_timeout="1000"
+               minimum_distance="0.000000"
+               server_name="hover"/>
+      </SequenceWithMemory>
+    </ReactiveSequence>
+  </BehaviorTree>
+
+  <BehaviorTree ID="NavigateThroughWaypoints">
+    <Sequence>
+      <SubTree ID="CancelAllNavigation"
+               _autoremap="true"/>
+      <ClearPath navigation_path="{path}"/>
+      <FixPathOrientations output_path="{goals}"
+                           robot_frame="{robot_frame}"
+                           tf_buffer="{tf_buffer}"
+                           input_path="{goals}"/>
+      <PathToPoseVector poses="{goals_vector}"
+                        path="{goals}"/>
+      <PipelineSequence name="NavigateWithReplanning">
+        <ControllerSelector topic_name="controller_selector"
+                            default_controller="FollowPath"
+                            selected_controller="{selected_controller}"/>
+        <PlannerSelector topic_name="planner_selector"
+                         default_planner="GridBased"
+                         selected_planner="{selected_planner}"/>
+        <RateController hz=".5">
+          <Fallback name="ComputePathThroughPoses">
+            <ReactiveSequence>
+              <RemovePassedGoals input_goals="{goals_vector}"
+                                 radius="2.5"
+                                 global_frame=""
+                                 robot_base_frame=""
+                                 output_goals="{goals_vector}"/>
+              <IsPathValid path="{path}"
+                           server_timeout="{server_timeout}"/>
+            </ReactiveSequence>
+            <RetryUntilSuccessful num_attempts="20">
+              <ComputePathThroughPoses goals="{goals_vector}"
+                                       server_name="compute_path_through_poses"
+                                       server_timeout="{server_timeout}"
+                                       planner_id="{selected_planner}"
+                                       path="{path}"
+                                       error_code_id="{compute_path_error_code}"/>
+            </RetryUntilSuccessful>
+          </Fallback>
+        </RateController>
+        <FollowPath controller_id="{selected_controller}"
+                    path="{path}"
+                    goal_checker_id=""
+                    progress_checker_id=""
+                    server_name="follow_path"
+                    server_timeout="{server_timeout}"
+                    error_code_id="{follow_path_error_code}"/>
+      </PipelineSequence>
+    </Sequence>
+  </BehaviorTree>
+
+  <BehaviorTree ID="NavigatorSequence">
+    <ReactiveSequence name="MainRunSequence">
+      <SubTree ID="UpdateCurrentTaskData"
+               _autoremap="true"/>
+      <ReactiveFallback name="SelectTaskReactiveFallback">
+        <SubTree ID="HoverTask"
+                 wait_for_service_timeout="{wait_for_service_timeout}"
+                 server_timeout="{server_timeout}"
+                 bt_loop_duration="{bt_loop_duration}"
+                 current_task_type="{current_task_type}"
+                 navigation_state="{navigation_state}"
+                 current_task="{current_task}"
+                 _autoremap="true"/>
+        <SubTree ID="GotoTask"
+                 current_task="{current_task}"
+                 lead_in_distance="0.0"
+                 server_timeout="{server_timeout}"
+                 bt_loop_duration="{bt_loop_duration}"
+                 wait_for_service_timeout="{wait_for_service_timeout}"
+                 _autoremap="true"/>
+        <SubTree ID="SurveyLineTask"
+                 lead_in_distance="{survey_lead_in_distance}"
+                 survey_line_task="{current_task}"
+                 _autoremap="true"/>
+        <SubTree ID="SurveyLineSetTask"
+                 survey_line_set_task="{current_task}"
+                 _autoremap="true"/>
+        <SubTree ID="SurveyAreaTask"
+                 survey_area_task="{current_task}"
+                 server_timeout="{server_timeout}"
+                 bt_loop_duration="{bt_loop_duration}"
+                 wait_for_service_timeout="{wait_for_service_timeout}"
+                 _autoremap="true"/>
+        <SetTaskDone name="SkipUnknownTaskType"
+                     task="{current_task}"/>
+      </ReactiveFallback>
+      <KeepRunningUntilFailure>
+        <Inverter>
+          <AllTasksDoneCondition task_list="{task_list}"/>
+        </Inverter>
+      </KeepRunningUntilFailure>
+    </ReactiveSequence>
+  </BehaviorTree>
+
+  <BehaviorTree ID="RunSurveyAreaSubTasks">
+    <ReactiveSequence>
+      <GetSubTasks sub_tasks="{survey_area_tasks}"
+                   task="{survey_area_task}"/>
+      <WhileDoElse>
+        <AllTasksDoneCondition task_list="{survey_area_tasks}"/>
+        <AlwaysSuccess/>
+        <KeepRunningUntilFailure>
+          <ReactiveSequence>
+            <SubTree ID="UpdateCurrentTaskData"
+                     default_planner="{=}"
+                     robot_default_speed="{=}"
+                     target_speed="{=}"
+                     current_tassk="{=}"
+                     active_task_id="{=}"
+                     current_task="{current_survey_area_task}"
+                     planner="{=}"
+                     current_task_type="{current_survey_area_task_type}"
+                     controller="{=}"
+                     current_task_id="{current_survey_area_task_id}"
+                     default_controller="{=}"
+                     task_list="{survey_area_tasks}"
+                     _autoremap="true"/>
+            <ReactiveFallback>
+              <SubTree ID="SurveyLineTask"
+                       lead_in_distance="{survey_lead_in_distance}"
+                       survey_line_task="{current_survey_area_task}"
+                       server_timeout="{server_timeout}"
+                       bt_loop_duration="{bt_loop_duration}"
+                       wait_for_service_timeout="{wait_for_service_timeout}"
+                       current_task_type="{current_survey_area_task_type}"
+                       _failureIf="current_survey_area_task_type != &apos;survey_line&apos;"
+                       _autoremap="true"/>
+              <SubTree ID="SurveyLineSetTask"
+                       name="SurveyAreaSurveyLineSetTask"
+                       survey_line_set_task="{current_survey_area_task}"
+                       _failureIf="current_survey_area_task_type != &apos;survey_line_set&apos;"
+                       _autoremap="true"/>
+              <SetTaskDone task="{current_survey_area_task}"/>
+            </ReactiveFallback>
+          </ReactiveSequence>
+        </KeepRunningUntilFailure>
+      </WhileDoElse>
+    </ReactiveSequence>
+  </BehaviorTree>
+
+  <!-- Simplified SurveyAreaTask: just runs sub-tasks without sonar coverage -->
+  <BehaviorTree ID="SurveyAreaTask">
+    <ReactiveSequence>
+      <ScriptCondition code="current_task_type == &apos;survey_area&apos;"/>
+      <Sequence>
+        <SubTree ID="RunSurveyAreaSubTasks"
+                 _autoremap="true"/>
+        <SetTaskDone name="SetSurveyAreaTaskDone"
+                     task="{survey_area_task}"/>
+      </Sequence>
+    </ReactiveSequence>
+  </BehaviorTree>
+
+  <BehaviorTree ID="SurveyLine">
+    <Sequence>
+      <SubTree ID="CancelAllNavigation"
+               _autoremap="true"/>
+      <ReactiveSequence>
+        <Script code="navigation_state := &quot;survey_line&quot;"/>
+        <ControllerSelector topic_name="controller_selector"
+                            default_controller="FollowPath"
+                            selected_controller="{selected_controller}"/>
+        <FollowPath controller_id="{selected_controller}"
+                    path="{survey_path}"
+                    goal_checker_id=""
+                    progress_checker_id=""
+                    server_name="follow_path"
+                    server_timeout="{server_timeout}"
+                    error_code_id="{follow_path_error_code}"/>
+      </ReactiveSequence>
+    </Sequence>
+  </BehaviorTree>
+
+  <BehaviorTree ID="SurveyLineSetTask">
+    <ReactiveSequence>
+      <ScriptCondition code="current_task_type == &apos;survey_line_set&apos;"/>
+      <GetSubTasks sub_tasks="{survey_line_set_sub_tasks}"
+                   task="{survey_line_set_task}"/>
+      <WhileDoElse>
+        <AllTasksDoneCondition task_list="{survey_line_set_sub_tasks}"/>
+        <SetTaskDone task="{survey_line_set_task}"/>
+        <KeepRunningUntilFailure>
+          <ReactiveSequence>
+            <SubTree ID="UpdateCurrentTaskData"
+                     default_planner="{=}"
+                     robot_default_speed="{=}"
+                     target_speed="{=}"
+                     current_tassk="{=}"
+                     active_task_id="{=}"
+                     current_task="{survey_line_set_sub_task}"
+                     planner="{=}"
+                     current_task_type="{survey_line_set_sub_task_type}"
+                     controller="{=}"
+                     current_task_id="{survey_line_set_sub_task_id}"
+                     default_controller="{=}"
+                     task_list="{survey_line_set_sub_tasks}"
+                     _autoremap="true"/>
+            <Sequence>
+              <SubTree ID="SurveyLineTask"
+                       name="SurveyLineSetSurveyLineTask"
+                       survey_line_task="{survey_line_set_sub_task}"
+                       server_timeout="{server_timeout}"
+                       bt_loop_duration="{bt_loop_duration}"
+                       wait_for_service_timeout="{wait_for_service_timeout}"
+                       current_task_type="{survey_line_set_sub_task_type}"
+                       _autoremap="true"/>
+              <SetTaskDone task="{survey_line_set_sub_task}"/>
+            </Sequence>
+          </ReactiveSequence>
+        </KeepRunningUntilFailure>
+      </WhileDoElse>
+    </ReactiveSequence>
+  </BehaviorTree>
+
+  <BehaviorTree ID="SurveyLineTask">
+    <ReactiveSequence>
+      <ScriptCondition code="current_task_type == &apos;survey_line&apos;"/>
+      <Sequence>
+        <SetPathFromTask end_index="-1"
+                         path="{survey_path}"
+                         start_index="0"
+                         task="{survey_line_task}"/>
+        <SubTree ID="TransitAndSurveyLine"
+                 _autoremap="true"/>
+        <SetTaskDone task="{survey_line_task}"/>
+      </Sequence>
+    </ReactiveSequence>
+  </BehaviorTree>
+
+  <BehaviorTree ID="TransitAndSurveyLine">
+    <Sequence>
+      <GetSubPath output_path="{transit_path}"
+                  end_index="0"
+                  start_index="0"
+                  input_path="{survey_path}"/>
+      <Script code="navigation_state := &quot;transit&quot;"/>
+      <SubTree ID="NavigateThroughWaypoints"
+               goals="{transit_path}"
+               _autoremap="true"/>
+      <SubTree ID="SurveyLine"
+               server_timeout="{server_timeout}"
+               bt_loop_duration="{bt_loop_duration}"
+               wait_for_service_timeout="{wait_for_service_timeout}"
+               _autoremap="true"/>
+    </Sequence>
+  </BehaviorTree>
+
+  <BehaviorTree ID="UpdateCurrentTaskData">
+    <Sequence>
+      <UpdateCurrentTask current_task_update_time="{current_task_update_time}"
+                         current_task_id="{current_task_id}"
+                         current_task_type="{current_task_type}"
+                         current_task="{current_task}"
+                         task_list="{task_list}"
+                         _onSuccess="active_task_id := current_task_id"/>
+      <GetTaskDataDouble value="{target_speed}"
+                         default_value="0.0"
+                         key="speed"
+                         task="{current_task}"/>
+      <GetTaskDataString value="{controller}"
+                         default_value="&quot;&quot;"
+                         key="controller"
+                         task="{current_task}"/>
+      <GetTaskDataString value="{planner}"
+                         default_value="&quot;&quot;"
+                         key="planner"
+                         task="{current_task}"/>
+    </Sequence>
+  </BehaviorTree>
+
+</root>
