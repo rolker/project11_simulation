@@ -28,7 +28,7 @@ public:
   {
     throttle_publisher_ = create_publisher<std_msgs::msg::Float32>("throttle",1);
     rudder_publisher_ = create_publisher<std_msgs::msg::Float32>("rudder",1);
-    status_publisher_ = create_publisher<marine_interfaces::msg::Heartbeat>("marine_autonomy/status/helm",1);
+    status_publisher_ = create_publisher<marine_interfaces::msg::Heartbeat>("marine/status/helm",1);
 
     helm_subscription_ = create_subscription<marine_interfaces::msg::Helm>("helm", 1, std::bind(&ASVHelm::helmCallback, this, std::placeholders::_1));
     twist_subscription_ = create_subscription<geometry_msgs::msg::TwistStamped>("cmd_vel", 10, std::bind(&ASVHelm::twistCallback, this, std::placeholders::_1));

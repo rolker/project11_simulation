@@ -33,7 +33,7 @@ public:
     left_position_publisher_ = create_publisher<std_msgs::msg::Float64>("thrusters/left/pos",1);
     right_position_publisher_ = create_publisher<std_msgs::msg::Float64>("thrusters/right/pos",1);
 
-    status_publisher_ = create_publisher<marine_interfaces::msg::Heartbeat>("marine_autonomy/status/helm",1);
+    status_publisher_ = create_publisher<marine_interfaces::msg::Heartbeat>("marine/status/helm",1);
 
     twist_subscription_ = create_subscription<geometry_msgs::msg::TwistStamped>("cmd_vel", 10, std::bind(&WAMVHelm::twist_callback, this, std::placeholders::_1));
     joint_states_subscription_ = create_subscription<sensor_msgs::msg::JointState>("joint_states", 5, std::bind(&WAMVHelm::joint_states_callback, this, std::placeholders::_1));
