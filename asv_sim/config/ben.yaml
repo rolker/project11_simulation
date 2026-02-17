@@ -1,7 +1,7 @@
 asv_sim:
   ros__parameters:
     platforms.ben.model: cw4
-    platforms.ben.mru_frame: ben/nav
+    platforms.ben.mru_frame: ben/motion_sensor
 
     # Portsmouth, New Hampshire, cod rock
     platforms.ben.start_lat: 43.073397415457535
