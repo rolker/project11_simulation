@@ -7,5 +7,6 @@
 
   <!-- Include extra sensor macros -->
   <xacro:include filename="$(find vrx_project11)/urdf/components/wamv_multibeam_sonar.xacro" />
+  <xacro:include filename="$(find vrx_project11)/urdf/components/wamv_bathymetric_multibeam_sonar.xacro" />
 
 </robot>

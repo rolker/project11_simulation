@@ -62,8 +62,8 @@ wamv_ball_shooter:
 wamv_pinger:
     - sensor_name: receiver
       position: 1.0 0 -1.0
-wamv_multibeam_sonar:
-    - name: multibeam_sonar
+wamv_bathymetric_multibeam_sonar:
+    - name: bathymetric_multibeam_sonar
       x: 0.0
       y: 0.0
       z: -0.3

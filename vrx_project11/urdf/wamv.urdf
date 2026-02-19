@@ -497,7 +497,7 @@
       <nRR>800.0</nRR>
     </plugin>
   </gazebo>
-  <!-- === [Un]lock the robot to the world === -->
+  <!-- === [Un]lock the robot to the world ===
   <gazebo>
     <plugin filename="gz-sim-detachable-joint-system" name="gz::sim::systems::DetachableJoint">
       <parent_link>wamv/base_link</parent_link>
@@ -506,7 +506,7 @@
       <topic>/vrx/release</topic>
       <suppress_child_warning>true</suppress_child_warning>
     </plugin>
-  </gazebo>
+  </gazebo> -->
   <!-- === TF === -->
   <!-- Publish robot state information -->
   <gazebo>
@@ -1347,14 +1347,14 @@
     </plugin>
   </gazebo>
   <!-- multibeam sonar sensor -->
-  <link name="wamv/multibeam_sonar_link">
+  <link name="wamv/bathymetric_multibeam_sonar_link">
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0.0"/>
       <geometry>
         <box size="0.1 0.2 0.2"/>
       </geometry>
     </visual>
-    <collision name="multibeam_sonar_collision">
+    <collision name="bathymetric_multibeam_sonar_collision">
       <geometry>
         <box size="0.1 0.2 0.2"/>
       </geometry>
@@ -1365,16 +1365,16 @@
     </inertial>
   </link>
   <!-- Sensor post -->
-  <link name="wamv/multibeam_sonar_post_link">
+  <link name="wamv/bathymetric_multibeam_sonar_post_link">
     <visual>
       <geometry>
         <cylinder length="1.5465" radius="0.0076"/>
       </geometry>
-      <material name="multibeam_sonar_post_material">
+      <material name="bathymetric_multibeam_sonar_post_material">
         <color rgba="0.0 0.0 0.0 1.0"/>
       </material>
     </visual>
-    <collision name="multibeam_sonar_post_collision">
+    <collision name="bathymetric_multibeam_sonar_post_collision">
       <geometry>
         <cylinder length="1.5465" radius="0.0076"/>
       </geometry>
@@ -1385,14 +1385,14 @@
     </inertial>
   </link>
   <!-- Sensor post arm -->
-  <link name="wamv/multibeam_sonar_post_arm_link">
-    <visual name="multibeam_sonar_post_arm_visual">
+  <link name="wamv/bathymetric_multibeam_sonar_post_arm_link">
+    <visual name="bathymetric_multibeam_sonar_post_arm_visual">
       <origin rpy="-1.0471975511965976 0 -1.5707963267948966" xyz="-0.038 0 -0.003"/>
       <geometry>
         <mesh filename="package://vrx_gazebo/models/sensor_post/mesh/sensor_post_arm.dae"/>
       </geometry>
     </visual>
-    <collision name="multibeam_sonar_post_arm_collision">
+    <collision name="bathymetric_multibeam_sonar_post_arm_collision">
       <origin rpy="-1.2042771838760873 0 -1.5707963267948966" xyz="0 0 0"/>
       <geometry>
         <cylinder length="0.065" radius="0.008"/>
@@ -1404,24 +1404,24 @@
       <inertia ixx="0.00003680833" ixy="0" ixz="0" iyy="0.00003680833" iyz="0" izz="0.00000320000"/>
     </inertial>
   </link>
-  <joint name="wamv/base_to_multibeam_sonar_post_joint" type="fixed">
+  <joint name="wamv/base_to_bathymetric_multibeam_sonar_post_joint" type="fixed">
     <origin rpy="0 0 0" xyz="-0.07 0.0 0.52325"/>
     <parent link="wamv/base_link"/>
-    <child link="wamv/multibeam_sonar_post_link"/>
+    <child link="wamv/bathymetric_multibeam_sonar_post_link"/>
   </joint>
   <!-- Sensor post to sensor post arm joint -->
-  <joint name="wamv/multibeam_sonar_post_to_multibeam_sonar_post_arm_joint" type="fixed">
+  <joint name="wamv/bathymetric_multibeam_sonar_post_to_bathymetric_multibeam_sonar_post_arm_joint" type="fixed">
     <origin rpy="0 0 0" xyz="0.03 0 -0.8732500000000001"/>
-    <parent link="wamv/multibeam_sonar_post_link"/>
-    <child link="wamv/multibeam_sonar_post_arm_link"/>
+    <parent link="wamv/bathymetric_multibeam_sonar_post_link"/>
+    <child link="wamv/bathymetric_multibeam_sonar_post_arm_link"/>
   </joint>
   <!-- Sensor post arm to sonar joint -->
-  <joint name="wamv/multibeam_sonar_post_arm_to_multibeam_sonar_joint" type="fixed">
+  <joint name="wamv/bathymetric_multibeam_sonar_post_arm_to_bathymetric_multibeam_sonar_joint" type="fixed">
     <origin rpy="0.0 1.5707963267948966 0.0" xyz="0.04 0 0.05"/>
-    <parent link="wamv/multibeam_sonar_post_arm_link"/>
-    <child link="wamv/multibeam_sonar_link"/>
+    <parent link="wamv/bathymetric_multibeam_sonar_post_arm_link"/>
+    <child link="wamv/bathymetric_multibeam_sonar_link"/>
   </joint>
-  <gazebo reference="wamv/multibeam_sonar_link">
+  <gazebo reference="wamv/bathymetric_multibeam_sonar_link">
     <visual>
       <material>
         <diffuse>1.0 1.0 1.0</diffuse>
@@ -1438,56 +1438,24 @@
     </visual>
   </gazebo>
   <gazebo>
-    <plugin filename="multibeam_sonar_system" name="custom::MultibeamSonarSystem">
+    <plugin filename="bathymetric_multibeam_sonar_system" name="custom::BathymetricMultibeamSonarSystem">
       </plugin>
   </gazebo>
-  <gazebo reference="wamv/multibeam_sonar_link">
-    <sensor gz:type="multibeam_sonar" name="multibeam_sonar_sensor" type="custom">
+  <gazebo reference="wamv/bathymetric_multibeam_sonar_link">
+    <sensor gz:type="bathymetric_multibeam_sonar" name="bathymetric_multibeam_sonar_sensor" type="custom">
       <always_on>true</always_on>
       <update_rate>2.0</update_rate>
-      <topic>wamv/multibeam_sonar/sonar_data</topic>
-      <gz_frame_id>wamv/wamv/multibeam_sonar_link</gz_frame_id>
+      <topic>wamv/bathymetric_multibeam_sonar/sonar_data</topic>
       <visualize>true</visualize>
-      <gz:multibeam_sonar>
-        <ray degrees="false">
-          <scan>
-            <horizontal>
-              <beams>256</beams>
-              <min_angle>-1.0471975511965976</min_angle>
-              <max_angle>1.0471975511965976</max_angle>
-            </horizontal>
-            <vertical>
-              <rays>30</rays>
-              <min_angle>-0.0349</min_angle>
-              <max_angle>0.0349</max_angle>
-            </vertical>
-          </scan>
-          <range>
-            <min>0.5</min>
-            <max>50.0</max>
-          </range>
-        </ray>
-        <spec>
-          <!-- Sonar properties -->
-          <verticalFOV>0.03490658503988659</verticalFOV>
-          <sonarFreq>200000.0</sonarFreq>
-          <bandwidth>29.9e3</bandwidth>
-          <soundSpeed>1500.0</soundSpeed>
-          <sourceLevel>220</sourceLevel>
-          <maxDistance>50.0</maxDistance>
-          <raySkips>3</raySkips>
-          <sensorGain>0.02</sensorGain>
-          <blazingSonarImage>true</blazingSonarImage>
-          <writeLog>false</writeLog>
-          <debugFlag>false</debugFlag>
-          <writeFrameInterval>5</writeFrameInterval>
-          <!-- ROS publication topics -->
-          <pointCloudTopicName>point_cloud</pointCloudTopicName>
-          <sonarImageRawTopicName>sonar_image_raw</sonarImageRawTopicName>
-          <sonarImageTopicName>sonar_image</sonarImageTopicName>
-          <frameName>wamv/multibeam_sonar_link</frameName>
-        </spec>
-      </gz:multibeam_sonar>
+      <gz:bathymetric_multibeam_sonar>
+        <frequency>200000.0</frequency>
+        <sound_speed>1500.0</sound_speed>
+        <minimum_range>0.5</minimum_range>
+        <maximum_range>50.0</maximum_range>
+        <beam_count>256</beam_count>
+        <minimum_beam_angle>-1.0471975511965976</minimum_beam_angle>
+        <maximum_beam_angle>1.0471975511965976</maximum_beam_angle>
+      </gz:bathymetric_multibeam_sonar>
     </sensor>
   </gazebo>
   <link name="wamv/cpu_cases_link">
