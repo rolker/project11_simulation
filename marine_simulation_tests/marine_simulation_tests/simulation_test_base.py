@@ -122,9 +122,6 @@ class SimulationTestBase(unittest.TestCase):
             # Nav2 may have activated after the initial goal was
             # rejected. Send clear_tasks to trigger updateNavigator()
             # which re-sends the done_hover goal.
-            self.node.get_logger().info(
-                'No initial Navigator heartbeat. '
-                'Sending clear_tasks to re-trigger navigation goal.')
             msg = String(data='clear_tasks')
             self.cmd_pub.publish(msg)
             rclpy.spin_once(self.node, timeout_sec=0.1)
@@ -197,6 +194,21 @@ class SimulationTestBase(unittest.TestCase):
             timeout,
         )
 
+    def wait_for_task_done(self, task_id, timeout=90.0):
+        """Wait for a heartbeat where task_id is marked done.
+
+        Checks for '(done)' in the task's heartbeat value. Does not
+        require Navigator=done, since the navigator may still be
+        running a subsequent task (e.g. done_hover).
+        """
+        def _check():
+            for hb in self.heartbeats_rx:
+                for kv in hb.values:
+                    if kv.key == task_id and '(done)' in kv.value:
+                        return True
+            return False
+        return self._spin_until(_check, timeout)
+
     def wait_for_mission_done(self, task_id, timeout=90.0):
         """Wait for Navigator=done heartbeat where task_id is marked done.
 
@@ -234,6 +246,14 @@ class SimulationTestBase(unittest.TestCase):
         for hb in reversed(self.heartbeats_rx):
             for kv in hb.values:
                 if kv.key == 'Navigator' and kv.value == 'done':
+                    return hb
+        return None
+
+    def last_heartbeat_with_task_done(self, task_id):
+        """Return the most recent heartbeat where task_id is marked done."""
+        for hb in reversed(self.heartbeats_rx):
+            for kv in hb.values:
+                if kv.key == task_id and '(done)' in kv.value:
                     return hb
         return None
 

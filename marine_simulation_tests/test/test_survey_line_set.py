@@ -133,29 +133,22 @@ class TestSurveyLineSet(SimulationTestBase):
         }])
         self.send_command(f'append_task mission_plan {mission}')
 
-        # 5. Wait for mission completion (longer timeout for multi-line).
-        # Wait for Navigator=done with test_survey marked done.
-        done = self.wait_for_mission_done('test_survey', timeout=180.0)
+        # 5. Wait for survey task completion (longer timeout for multi-line).
+        # The navigator stays running after survey completes (done_hover
+        # task keeps it busy), so check task status directly.
+        done = self.wait_for_task_done('test_survey', timeout=180.0)
         self.assertTrue(
             done,
-            'Navigator did not report test_survey done within 180s. '
+            'test_survey was not marked done within 180s. '
             'The survey may not have completed.',
         )
 
-        # 6. Verify task completion in final heartbeat.
-        done_hb = self.last_done_heartbeat()
-        self.assertIsNotNone(done_hb, 'No done heartbeat found.')
-
-        # The survey creates tasks: test_survey (line_set), line_1, line_2.
-        # Check that the survey parent task is present and done.
-        survey_val = self.heartbeat_task_value(done_hb, 'test_survey')
+        # 6. Verify task completion in latest heartbeat.
+        # Find the most recent heartbeat with test_survey marked done.
+        done_hb = self.last_heartbeat_with_task_done('test_survey')
         self.assertIsNotNone(
-            survey_val,
-            'test_survey task not found in done heartbeat.',
-        )
-        self.assertIn(
-            '(done)', survey_val,
-            f'test_survey not marked done: {survey_val}',
+            done_hb,
+            'No heartbeat with test_survey (done) found.',
         )
 
         # 7. Verify hover stability near final waypoint.

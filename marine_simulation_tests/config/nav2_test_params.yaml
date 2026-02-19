@@ -54,12 +54,13 @@ controller_server:
       default_speed: 2.75
       visualization: false
       pid:
-        upper_limit: 90.0
-        lower_limit: -90.0
-        windup_limit: 50.0
-        kp: 6.0
-        ki: 0.5
-        kd: 0.6
+        p: -6.0
+        i: -0.5
+        d: -0.6
+        i_clamp_max: 50.0
+        i_clamp_min: -50.0
+        u_clamp_max: 90.0
+        u_clamp_min: -90.0
 
 
 local_costmap:

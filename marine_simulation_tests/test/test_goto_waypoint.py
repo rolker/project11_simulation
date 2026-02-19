@@ -109,13 +109,14 @@ class TestGotoWaypoint(SimulationTestBase):
         }])
         self.send_command(f'append_task mission_plan {mission}')
 
-        # 5. Wait for mission completion.
-        # Wait for Navigator=done with goto_0 marked done (not just
-        # any done heartbeat, which could be from a preempted goal).
-        done = self.wait_for_mission_done('goto_0', timeout=90.0)
+        # 5. Wait for goto_0 task completion.
+        # The navigator stays running after goto completes (done_hover
+        # task keeps it busy), so check task status directly rather
+        # than waiting for Navigator=done.
+        done = self.wait_for_task_done('goto_0', timeout=90.0)
         self.assertTrue(
             done,
-            'Navigator did not report goto_0 done within 90s. '
+            'goto_0 was not marked done within 90s. '
             'The vehicle may not have reached the waypoint.',
         )
 
