@@ -20,10 +20,14 @@ launch integration, raster support, interpolation) will be planned in follow-up 
 
 1. **Online topo/bathy data** — The owner asked whether terrain data can be queried
    online. Yes: GEBCO (global bathymetry, 15 arc-sec) and USGS 3DEP (US land elevation,
-   10m) are freely available via Python libraries (`pygmt`, `seamless-3dep`). For the MVP
-   we will use **GEBCO via PyGMT** for bathymetry — it covers both ocean and land relief
-   globally, requires no authentication, and avoids needing local raster files. USGS 3DEP
-   can supplement land elevation in a later milestone if needed.
+   10m) are freely available. PyGMT is the nicest Python wrapper, but it is **not in
+   rosdep** and has no apt package, so we cannot declare it as a `package.xml` dependency.
+   Instead, we will **download GEBCO data directly via HTTPS** (the GEBCO grid is served
+   as NetCDF/GeoTIFF) and read it with GDAL (already a dependency). For small regions,
+   the Open Topo Data REST API (`api.opentopodata.org/v1/gebco2020`) is another option.
+   All dependencies (`python3-gdal`, `python3-requests`, `python3-scipy`, `python3-numpy`,
+   `python3-pil`) are in rosdep. USGS 3DEP can supplement land elevation in a later
+   milestone if needed.
 
 2. **Soundings (SOUNDG)** — S57 SOUNDG features are point data with precise depths. The
    existing C++ `marine_charts` library already identifies SOUNDG (OBJL 129). For the MVP
@@ -52,10 +56,14 @@ launch integration, raster support, interpolation) will be planned in follow-up 
    - COALNE line features (coastlines)
    Accept bounding box (lat/lon) to clip features to the region of interest.
 
-3. **Implement online bathymetry fetching (`bathy_fetcher.py`)** — Use PyGMT
-   `load_earth_relief()` to download GEBCO data for the bounding box. Returns a numpy
-   array with elevation/depth values. Cache downloaded data locally. This replaces the
-   need for local GeoTIFF files.
+3. **Implement online bathymetry fetching (`bathy_fetcher.py`)** — Download GEBCO
+   global relief data for the bounding box via HTTPS. Two approaches available:
+   - **Primary**: Download a GEBCO GeoTIFF subset from the GEBCO download service or
+     NOAA ERDDAP endpoint, read with GDAL. Cache downloaded tiles locally.
+   - **Fallback**: Query Open Topo Data REST API for point elevations (simpler but
+     slower for large grids).
+   Returns a numpy array with elevation/depth values. This replaces the need for local
+   GeoTIFF files. All deps are in rosdep (`python3-gdal`, `python3-requests`).
 
 ### Phase 2: Heightmap generation (milestone 1)
 
@@ -122,7 +130,7 @@ launch integration, raster support, interpolation) will be planned in follow-up 
 
 | File | Change |
 |------|--------|
-| `s57_world_gen/package.xml` | **New** — ament_python package with deps: rclpy, python3-gdal, python3-numpy, python3-scipy, python3-pygmt |
+| `s57_world_gen/package.xml` | **New** — ament_python package with deps: python3-gdal, python3-numpy, python3-scipy, python3-requests, python3-pil |
 | `s57_world_gen/setup.py` | **New** — setuptools config with console_scripts entry point |
 | `s57_world_gen/setup.cfg` | **New** — script directories |
 | `s57_world_gen/resource/s57_world_gen` | **New** — empty ament index marker |
@@ -163,22 +171,22 @@ launch integration, raster support, interpolation) will be planned in follow-up 
 | If we change... | Also update... | Included in plan? |
 |---|---|---|
 | Add new package to repo | `README.md` at repo root (package list) | Yes — brief mention of new package |
-| Add `python3-pygmt` dependency | Verify `pygmt` is installable via pip/apt in CI | Yes — test in dev environment first |
 | Add `python3-scipy` dependency | Already available via `python3-scipy` apt package | Yes — declared in `package.xml` |
+| Add `python3-requests` dependency | Already available via `python3-requests` apt package | Yes — declared in `package.xml` |
 
 ## Open Questions
 
-1. **PyGMT availability** — Is `pygmt` installable in the current ROS 2 environment?
-   If not, we could fall back to direct GEBCO NetCDF download via `xarray` + `rioxarray`,
-   or use the Open Topo Data REST API (no library needed). **Recommend testing before
-   committing to the dependency.**
+1. ~~**PyGMT availability**~~ — **Resolved**: PyGMT is not in rosdep and has no apt
+   package. Plan updated to use direct GEBCO download via HTTPS + GDAL. All deps
+   (`python3-gdal`, `python3-requests`, `python3-scipy`, `python3-numpy`, `python3-pil`)
+   are in rosdep.
 
 2. **Sub-issues** — Should milestones 3–7 each get their own GitHub issue now, or should
    we wait until the MVP (milestones 1–2) is merged? The review recommended breaking
    the issue up — this plan already scopes to 1–2 only.
 
-3. **ENC data for testing** — Do we have S57 `.000` files for Portsmouth Harbor
-   available locally, or should the test use GEBCO-only mode without S57 overlay?
+3. ~~**ENC data for testing**~~ — **Resolved**: S57 `.000` files for Portsmouth Harbor
+   are available locally. Tests can use real S57 data.
 
 4. **VRX wave/wind plugin compatibility** — The VRX plugins (`WaveVisual`,
    `PublisherPlugin`, `USVWind`) need to be verified as available in the current
