@@ -55,8 +55,9 @@ def terrain_to_heightmap(
             np.uint16
         )
 
-    # Create model directory
-    model_dir = os.path.join(output_dir, "models", "terrain")
+    # Create model directory directly under output_dir so Gazebo can find it
+    # via GZ_SIM_RESOURCE_PATH=<output_dir> as model://terrain
+    model_dir = os.path.join(output_dir, "terrain")
     os.makedirs(model_dir, exist_ok=True)
 
     # Save heightmap PNG
@@ -108,7 +109,7 @@ def _write_model_sdf(model_dir: str, info: dict):
       <visual name="visual">
         <geometry>
           <heightmap>
-            <uri>file://heightmap.png</uri>
+            <uri>model://terrain/heightmap.png</uri>
             <size>{info['size_x']:.1f} {info['size_y']:.1f} {info['size_z']:.1f}</size>
             <pos>0 0 {info['pos_z']:.1f}</pos>
           </heightmap>
@@ -117,7 +118,7 @@ def _write_model_sdf(model_dir: str, info: dict):
       <collision name="collision">
         <geometry>
           <heightmap>
-            <uri>file://heightmap.png</uri>
+            <uri>model://terrain/heightmap.png</uri>
             <size>{info['size_x']:.1f} {info['size_y']:.1f} {info['size_z']:.1f}</size>
             <pos>0 0 {info['pos_z']:.1f}</pos>
           </heightmap>

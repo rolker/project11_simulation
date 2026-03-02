@@ -96,69 +96,8 @@ def _build_world_sdf(
 
     <!-- Generated terrain -->
     <include>
-      <uri>models/terrain</uri>
+      <uri>terrain</uri>
     </include>
-
-    <!-- VRX wave system -->
-    <include>
-      <name>Coast Waves</name>
-      <pose>0 0 0 0 0 0</pose>
-      <uri>coast_waves</uri>
-    </include>
-
-    <!-- VRX wind plugin -->
-    <plugin
-      filename="libUSVWind.so"
-      name="vrx::USVWind">
-      <wind_obj>
-        <name>wamv</name>
-        <link_name>wamv/base_link</link_name>
-        <coeff_vector>.5 .5 .33</coeff_vector>
-      </wind_obj>
-      <wind_direction>240</wind_direction>
-      <wind_mean_velocity>0.0</wind_mean_velocity>
-      <var_wind_gain_constants>0</var_wind_gain_constants>
-      <var_wind_time_constants>2</var_wind_time_constants>
-      <random_seed>10</random_seed>
-      <update_rate>10</update_rate>
-      <topic_wind_speed>/vrx/debug/wind/speed</topic_wind_speed>
-      <topic_wind_direction>/vrx/debug/wind/direction</topic_wind_direction>
-    </plugin>
-
-    <!-- VRX wave parameters -->
-    <plugin filename="libPublisherPlugin.so" name="vrx::PublisherPlugin">
-      <message type="gz.msgs.Param" topic="/vrx/wavefield/parameters"
-               every="2.0">
-        params {{
-          key: "direction"
-          value {{
-            type: DOUBLE
-            double_value: 0.0
-          }}
-        }}
-        params {{
-          key: "gain"
-          value {{
-            type: DOUBLE
-            double_value: 0.3
-          }}
-        }}
-        params {{
-          key: "period"
-          value {{
-            type: DOUBLE
-            double_value: 5
-          }}
-        }}
-        params {{
-          key: "steepness"
-          value {{
-            type: DOUBLE
-            double_value: 0
-          }}
-        }}
-      </message>
-    </plugin>
 
   </world>
 </sdf>
