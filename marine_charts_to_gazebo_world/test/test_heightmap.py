@@ -19,7 +19,7 @@ class TestTerrainToHeightmap:
         with tempfile.TemporaryDirectory() as tmpdir:
             result = terrain_to_heightmap(terrain, info, tmpdir)
 
-            model_dir = os.path.join(tmpdir, "models", "terrain")
+            model_dir = os.path.join(tmpdir, "terrain")
             assert os.path.exists(os.path.join(model_dir, "heightmap.png"))
             assert os.path.exists(os.path.join(model_dir, "model.sdf"))
             assert os.path.exists(os.path.join(model_dir, "model.config"))

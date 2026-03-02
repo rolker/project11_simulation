@@ -98,18 +98,16 @@ class TestGenerateWorldSdf:
             _, tree = self._generate(tmpdir)
             includes = tree.findall(".//include")
             uris = [inc.findtext("uri") for inc in includes]
-            assert "models/terrain" in uris
+            assert "terrain" in uris
 
-    def test_coast_waves_include(self):
-        """World should include VRX coast_waves model."""
+    def test_water_plane(self):
+        """World should include a water surface plane at z=0."""
         with tempfile.TemporaryDirectory() as tmpdir:
             _, tree = self._generate(tmpdir)
-            includes = tree.findall(".//include")
-            found = any(
-                inc.findtext("uri") == "coast_waves"
-                for inc in includes
-            )
-            assert found, "coast_waves model not found in includes"
+            water = tree.find(".//model[@name='water_plane']")
+            assert water is not None, "water_plane model not found"
+            static = water.findtext("static")
+            assert static == "true"
 
     def test_scene_configured(self):
         """Scene should have sky and grid disabled."""
