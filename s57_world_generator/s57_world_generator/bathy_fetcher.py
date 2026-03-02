@@ -13,10 +13,15 @@ from .s57_reader import BoundingBox
 
 gdal.UseExceptions()
 
-# NOAA ERDDAP endpoint for ETOPO 2022 (15 arc-second global relief)
-ERDDAP_URL = (
-    "https://www.ncei.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.geotif"
-)
+# NOAA ERDDAP endpoints for ETOPO 2022 (15 arc-second global relief).
+# Uses NetCDF format (.nc) for full float precision — the .geotif format
+# on some mirrors returns 8-bit data, losing elevation accuracy.
+# Tried in order; CoastWatch uses -180/180 longitude (works for western
+# hemisphere), NCEI was the original host (currently 404, may return).
+_ERDDAP_URLS = [
+    "https://coastwatch.pfeg.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.nc",
+    "https://www.ncei.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.nc",
+]
 
 # Default cache directory
 _DEFAULT_CACHE_DIR = os.path.join(
@@ -41,7 +46,7 @@ def fetch_etopo(
 
     Args:
         bbox: Geographic bounding box in WGS84 degrees.
-        cache_dir: Directory to cache downloaded GeoTIFFs. Defaults to
+        cache_dir: Directory to cache downloaded data. Defaults to
             ~/.cache/s57_world_generator/.
 
     Returns:
@@ -54,32 +59,42 @@ def fetch_etopo(
         cache_dir = _DEFAULT_CACHE_DIR
     os.makedirs(cache_dir, exist_ok=True)
 
-    cache_file = os.path.join(cache_dir, f"etopo_{_cache_key(bbox)}.tif")
+    cache_file = os.path.join(cache_dir, f"etopo_{_cache_key(bbox)}.nc")
 
     if not os.path.exists(cache_file):
         _download_etopo(bbox, cache_file)
 
-    return _read_geotiff(cache_file, bbox)
+    return _read_raster(cache_file, bbox)
 
 
 def _download_etopo(bbox: BoundingBox, output_path: str):
-    """Download ETOPO GeoTIFF from NOAA ERDDAP."""
-    # ERDDAP griddap constraint: latitude and longitude ranges
-    # Format: dataset.fileType?variable[(lat_start):(lat_end)][(lon_start):(lon_end)]
-    # Add a small buffer to ensure full coverage
+    """Download ETOPO NetCDF from NOAA ERDDAP, trying mirrors in order."""
     buf = 0.01
-    url = (
-        f"{ERDDAP_URL}"
+    constraint = (
         f"?z[({bbox.south - buf}):({bbox.north + buf})]"
         f"[({bbox.west - buf}):({bbox.east + buf})]"
     )
 
+    last_error = None
+    for base_url in _ERDDAP_URLS:
+        url = base_url + constraint
+        try:
+            _download_file(url, output_path)
+            return
+        except requests.HTTPError as e:
+            last_error = e
+            continue
+
+    raise last_error
+
+
+def _download_file(url: str, output_path: str):
+    """Download a URL to a file atomically."""
     with requests.get(url, stream=True, timeout=(30, 300)) as response:
         response.raise_for_status()
 
-        # Write to temp file first, then rename for atomicity
         fd, tmp_path = tempfile.mkstemp(
-            suffix=".tif", dir=os.path.dirname(output_path)
+            suffix=".nc", dir=os.path.dirname(output_path)
         )
         try:
             with os.fdopen(fd, "wb") as tmp_file:
@@ -95,21 +110,29 @@ def _download_etopo(bbox: BoundingBox, output_path: str):
             raise
 
 
-def _read_geotiff(
+def _read_raster(
     filepath: str, bbox: BoundingBox
 ) -> Tuple[np.ndarray, dict]:
-    """Read a GeoTIFF and extract data within the bounding box."""
+    """Read a raster file (GeoTIFF or NetCDF) via GDAL."""
     ds = gdal.Open(filepath, gdal.GA_ReadOnly)
     if ds is None:
-        raise FileNotFoundError(f"Cannot open GeoTIFF: {filepath}")
+        raise FileNotFoundError(f"Cannot open raster: {filepath}")
+
+    # NetCDF files may expose data as subdatasets rather than direct bands
+    subdatasets = ds.GetSubDatasets()
+    if subdatasets:
+        ds = None
+        ds = gdal.Open(subdatasets[0][0], gdal.GA_ReadOnly)
+        if ds is None:
+            raise FileNotFoundError(
+                f"Cannot open NetCDF subdataset: {subdatasets[0][0]}"
+            )
 
     try:
         gt = ds.GetGeoTransform()
         band = ds.GetRasterBand(1)
         data = band.ReadAsArray()
 
-        # GeoTransform: (x_origin, x_pixel_size, 0, y_origin, 0, y_pixel_size)
-        # y_pixel_size is typically negative (north-up)
         metadata = {
             "geotransform": gt,
             "projection": ds.GetProjection(),

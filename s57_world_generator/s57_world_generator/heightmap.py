@@ -65,6 +65,9 @@ def terrain_to_heightmap(
     img = Image.fromarray(normalized, mode="I;16")
     img.save(heightmap_path)
 
+    # Generate terrain textures required by OGRE2's heightmap shader
+    _write_terrain_textures(model_dir, terrain_clean, terrain_info)
+
     # Write model.config
     _write_model_config(model_dir)
 
@@ -81,6 +84,53 @@ def terrain_to_heightmap(
     _write_model_sdf(model_dir, heightmap_info)
 
     return heightmap_info
+
+
+def _write_terrain_textures(model_dir: str, terrain: np.ndarray,
+                            terrain_info: dict):
+    """Generate diffuse and normal map textures for the heightmap.
+
+    OGRE2's terrain shader requires at least one texture layer in the
+    visual heightmap; without it the generated shader fails to compile.
+    Normal maps are computed from the terrain gradient for proper shading.
+    """
+    textures_dir = os.path.join(model_dir, "textures")
+    os.makedirs(textures_dir, exist_ok=True)
+
+    # Seafloor diffuse: muted sandy brown
+    diffuse = Image.new("RGB", (16, 16), (160, 145, 120))
+    diffuse.save(os.path.join(textures_dir, "seafloor_diffuse.png"))
+
+    # Land diffuse: muted green-brown
+    land = Image.new("RGB", (16, 16), (120, 140, 95))
+    land.save(os.path.join(textures_dir, "land_diffuse.png"))
+
+    # Compute normal map from terrain gradients
+    # Pixel spacing in meters
+    dx = terrain_info["size_x"] / (terrain.shape[1] - 1)
+    dy = terrain_info["size_y"] / (terrain.shape[0] - 1)
+
+    # Sobel-like gradient: dz/dx and dz/dy
+    # Use numpy gradient which handles edges with one-sided differences
+    gy, gx = np.gradient(terrain, dy, dx)
+
+    # Normal vector: (-dz/dx, -dz/dy, 1), then normalize
+    nx = -gx
+    ny = -gy
+    nz = np.ones_like(nx)
+    length = np.sqrt(nx**2 + ny**2 + nz**2)
+    nx /= length
+    ny /= length
+    nz /= length
+
+    # Encode to tangent-space normal map: [-1,1] -> [0,255]
+    normal_r = ((nx * 0.5 + 0.5) * 255).astype(np.uint8)
+    normal_g = ((ny * 0.5 + 0.5) * 255).astype(np.uint8)
+    normal_b = ((nz * 0.5 + 0.5) * 255).astype(np.uint8)
+
+    normal_rgb = np.stack([normal_r, normal_g, normal_b], axis=-1)
+    normal_img = Image.fromarray(normal_rgb, mode="RGB")
+    normal_img.save(os.path.join(textures_dir, "terrain_normal.png"))
 
 
 def _write_model_config(model_dir: str):
@@ -100,6 +150,11 @@ def _write_model_config(model_dir: str):
 
 def _write_model_sdf(model_dir: str, info: dict):
     """Write the terrain model SDF with heightmap visual and collision."""
+    # Blend height: transition from seafloor to land texture.
+    # Expressed relative to the heightmap's pos_z (min elevation).
+    # Sea level is at 0m, so offset from min = -min_elevation.
+    blend_height = -info["pos_z"]
+
     sdf = f"""\
 <?xml version="1.0"?>
 <sdf version="1.9">
@@ -109,6 +164,21 @@ def _write_model_sdf(model_dir: str, info: dict):
       <visual name="visual">
         <geometry>
           <heightmap>
+            <use_terrain_paging>false</use_terrain_paging>
+            <texture>
+              <diffuse>model://terrain/textures/seafloor_diffuse.png</diffuse>
+              <normal>model://terrain/textures/terrain_normal.png</normal>
+              <size>10</size>
+            </texture>
+            <texture>
+              <diffuse>model://terrain/textures/land_diffuse.png</diffuse>
+              <normal>model://terrain/textures/terrain_normal.png</normal>
+              <size>10</size>
+            </texture>
+            <blend>
+              <min_height>{blend_height:.1f}</min_height>
+              <fade_dist>2</fade_dist>
+            </blend>
             <uri>model://terrain/heightmap.png</uri>
             <size>{info['size_x']:.1f} {info['size_y']:.1f} {info['size_z']:.1f}</size>
             <pos>0 0 {info['pos_z']:.1f}</pos>

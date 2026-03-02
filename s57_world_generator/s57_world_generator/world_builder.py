@@ -99,6 +99,27 @@ def _build_world_sdf(
       <uri>terrain</uri>
     </include>
 
+    <!-- Water surface at z=0 -->
+    <model name="water_plane">
+      <static>true</static>
+      <link name="link">
+        <visual name="water_visual">
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>{heightmap_info['size_x']:.0f} {heightmap_info['size_y']:.0f}</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.0 0.05 0.3 0.8</ambient>
+            <diffuse>0.0 0.1 0.5 0.8</diffuse>
+            <specular>0.5 0.5 0.5 0.5</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
   </world>
 </sdf>
 """
