@@ -3,7 +3,7 @@
 import pytest
 from osgeo import ogr
 
-from s57_world_generator.s57_reader import (
+from marine_charts_to_gazebo_world.s57_reader import (
     BoundingBox,
     _clip_geometry,
     _extract_soundings_from_multipoint,

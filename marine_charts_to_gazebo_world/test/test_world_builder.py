@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from s57_world_generator.world_builder import generate_world_sdf
+from marine_charts_to_gazebo_world.world_builder import generate_world_sdf
 
 
 class TestGenerateWorldSdf:

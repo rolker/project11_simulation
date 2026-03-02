@@ -26,7 +26,7 @@ _ERDDAP_URLS = [
 # Default cache directory
 _DEFAULT_CACHE_DIR = os.path.join(
     os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")),
-    "s57_world_generator",
+    "marine_charts_to_gazebo_world",
 )
 
 
@@ -47,7 +47,7 @@ def fetch_etopo(
     Args:
         bbox: Geographic bounding box in WGS84 degrees.
         cache_dir: Directory to cache downloaded data. Defaults to
-            ~/.cache/s57_world_generator/.
+            ~/.cache/marine_charts_to_gazebo_world/.
 
     Returns:
         Tuple of (elevation_array, metadata_dict).

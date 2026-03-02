@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>s57_world_generator</name>
+  <name>marine_charts_to_gazebo_world</name>
   <version>0.0.0</version>
   <description>Generate Gazebo Harmonic SDF worlds from S57 ENC chart data</description>
 

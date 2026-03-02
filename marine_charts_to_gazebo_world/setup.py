@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 's57_world_generator'
+package_name = 'marine_charts_to_gazebo_world'
 
 setup(
     name=package_name,
@@ -20,7 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'generate_world = s57_world_generator.generate_world:main',
+            'generate_world = marine_charts_to_gazebo_world.generate_world:main',
         ],
     },
 )

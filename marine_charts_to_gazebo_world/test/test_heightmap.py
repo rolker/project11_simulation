@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from s57_world_generator.heightmap import terrain_to_heightmap
+from marine_charts_to_gazebo_world.heightmap import terrain_to_heightmap
 
 
 class TestTerrainToHeightmap:

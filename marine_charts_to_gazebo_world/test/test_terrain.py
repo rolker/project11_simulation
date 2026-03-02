@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from s57_world_generator.s57_reader import BoundingBox, Sounding, S57Features
-from s57_world_generator.terrain import build_terrain, _sample_raster
+from marine_charts_to_gazebo_world.s57_reader import BoundingBox, Sounding, S57Features
+from marine_charts_to_gazebo_world.terrain import build_terrain, _sample_raster
 
 
 class TestSampleRaster:
