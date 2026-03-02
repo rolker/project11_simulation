@@ -1,0 +1,15 @@
+# Portsmouth NH harbor region parameters
+bounds:
+  south: 43.065
+  west: -70.72
+  north: 43.085
+  east: -70.70
+
+world_name: portsmouth_harbor
+
+# Heightmap grid: 2^grid_power + 1 (9 = 513x513)
+grid_power: 9
+
+# Optional: path to S57 ENC data directory.
+# Set ROS_S57_ENC_ROOT env var or override here.
+# enc_root: /path/to/ENC_ROOT
