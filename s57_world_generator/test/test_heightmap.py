@@ -50,7 +50,6 @@ class TestTerrainToHeightmap:
     def test_elevation_range_in_result(self):
         """Result dict should contain correct elevation range."""
         terrain = np.array([[0.0, 10.0], [5.0, -5.0]])
-        # Doesn't satisfy 2^n+1 constraint, but let's make it 3x3
         terrain = np.array([
             [0.0, 5.0, 10.0],
             [2.0, -5.0, 8.0],
@@ -72,7 +71,7 @@ class TestTerrainToHeightmap:
         info = {"size_x": 100.0, "size_y": 100.0, "grid_size": 17}
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with pytest.raises(AssertionError):
+            with pytest.raises(ValueError):
                 terrain_to_heightmap(terrain, info, tmpdir)
 
     def test_invalid_grid_size_raises(self):
@@ -81,7 +80,7 @@ class TestTerrainToHeightmap:
         info = {"size_x": 100.0, "size_y": 100.0, "grid_size": 10}
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with pytest.raises(AssertionError):
+            with pytest.raises(ValueError):
                 terrain_to_heightmap(terrain, info, tmpdir)
 
     def test_handles_nan(self):

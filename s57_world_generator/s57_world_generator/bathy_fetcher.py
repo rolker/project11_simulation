@@ -3,7 +3,6 @@
 import hashlib
 import os
 import tempfile
-from pathlib import Path
 from typing import Optional, Tuple
 
 import numpy as np
@@ -75,19 +74,25 @@ def _download_etopo(bbox: BoundingBox, output_path: str):
         f"[({bbox.west - buf}):({bbox.east + buf})]"
     )
 
-    response = requests.get(url, timeout=120)
-    response.raise_for_status()
+    with requests.get(url, stream=True, timeout=(30, 300)) as response:
+        response.raise_for_status()
 
-    # Write to temp file first, then rename for atomicity
-    fd, tmp_path = tempfile.mkstemp(suffix=".tif", dir=os.path.dirname(output_path))
-    try:
-        os.write(fd, response.content)
-        os.close(fd)
-        os.rename(tmp_path, output_path)
-    except Exception:
-        os.close(fd)
-        os.unlink(tmp_path)
-        raise
+        # Write to temp file first, then rename for atomicity
+        fd, tmp_path = tempfile.mkstemp(
+            suffix=".tif", dir=os.path.dirname(output_path)
+        )
+        try:
+            with os.fdopen(fd, "wb") as tmp_file:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        tmp_file.write(chunk)
+            os.rename(tmp_path, output_path)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except FileNotFoundError:
+                pass
+            raise
 
 
 def _read_geotiff(

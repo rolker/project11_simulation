@@ -67,8 +67,8 @@ def _build_world_sdf(
     <scene>
       <sky></sky>
       <grid>false</grid>
-      <ambient>1.0 1.0 1.0</ambient>
-      <background>0.8 0.8 0.8</background>
+      <ambient>1.0 1.0 1.0 1</ambient>
+      <background>0.8 0.8 0.8 1</background>
     </scene>
 
     <spherical_coordinates>

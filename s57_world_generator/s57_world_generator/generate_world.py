@@ -85,6 +85,13 @@ def main(argv=None):
         )
         return 1
 
+    if args.grid_power < 1 or args.grid_power > 14:
+        print(
+            "Error: --grid-power must be between 1 and 14",
+            file=sys.stderr,
+        )
+        return 1
+
     grid_size = 2 ** args.grid_power + 1
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -101,19 +108,33 @@ def main(argv=None):
         )
 
     # Step 2: Fetch online bathymetry
+    elevation = None
+    metadata = None
     print("Fetching ETOPO elevation data...")
-    elevation, metadata = fetch_etopo(bbox, cache_dir=args.cache_dir)
-    print(f"  Downloaded {elevation.shape[0]}x{elevation.shape[1]} grid")
-    print(
-        f"  Elevation range: {elevation.min():.1f}m to {elevation.max():.1f}m"
-    )
+    try:
+        elevation, metadata = fetch_etopo(bbox, cache_dir=args.cache_dir)
+        print(f"  Downloaded {elevation.shape[0]}x{elevation.shape[1]} grid")
+        print(
+            f"  Elevation range: {elevation.min():.1f}m to "
+            f"{elevation.max():.1f}m"
+        )
+    except Exception as e:
+        print(f"  Warning: ETOPO download failed: {e}", file=sys.stderr)
+        if s57_features is None or not s57_features.soundings:
+            print(
+                "Error: No elevation data available. Provide --enc-root with "
+                "S57 charts or ensure network access for ETOPO download.",
+                file=sys.stderr,
+            )
+            return 1
+        print("  Falling back to S57-only terrain generation.")
 
     # Step 3: Build terrain surface
     print(f"Building terrain ({grid_size}x{grid_size})...")
     terrain, terrain_info = build_terrain(
         bbox=bbox,
         base_elevation=elevation,
-        base_geotransform=metadata["geotransform"],
+        base_geotransform=metadata["geotransform"] if metadata else None,
         s57_features=s57_features,
         grid_size=grid_size,
     )

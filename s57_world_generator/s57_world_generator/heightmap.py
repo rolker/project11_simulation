@@ -1,7 +1,6 @@
 """Generate Gazebo-compatible heightmap PNG from terrain data."""
 
 import os
-from typing import Tuple
 
 import numpy as np
 from PIL import Image
@@ -33,14 +32,12 @@ def terrain_to_heightmap(
             'max_elevation': maximum elevation value
     """
     grid_size = terrain.shape[0]
-    assert terrain.shape[0] == terrain.shape[1], (
-        f"Heightmap must be square, got {terrain.shape}"
-    )
+    if terrain.shape[0] != terrain.shape[1]:
+        raise ValueError(f"Heightmap must be square, got {terrain.shape}")
     # Verify (2^n + 1) constraint
     n = grid_size - 1
-    assert n > 0 and (n & (n - 1)) == 0, (
-        f"Grid size must be 2^n + 1, got {grid_size}"
-    )
+    if not (n > 0 and (n & (n - 1)) == 0):
+        raise ValueError(f"Grid size must be 2^n + 1, got {grid_size}")
 
     # Handle NaN values (fill with minimum elevation)
     min_elev = float(np.nanmin(terrain))

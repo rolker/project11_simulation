@@ -1,10 +1,10 @@
 """Read S57 ENC chart features relevant to world generation."""
 
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+import logging
+from typing import List, Optional
 
-import numpy as np
-from osgeo import ogr, osr
+from osgeo import ogr
 
 ogr.UseExceptions()
 
@@ -180,6 +180,7 @@ def read_enc_directory(enc_root: str, bbox: BoundingBox) -> S57Features:
     """
     import os
 
+    logger = logging.getLogger(__name__)
     combined = S57Features()
 
     for dirpath, _dirnames, filenames in os.walk(enc_root):
@@ -193,6 +194,6 @@ def read_enc_directory(enc_root: str, bbox: BoundingBox) -> S57Features:
                     combined.land_areas.extend(features.land_areas)
                     combined.coastlines.extend(features.coastlines)
                 except Exception as e:
-                    print(f"Warning: skipping {filepath}: {e}")
+                    logger.warning("Skipping %s: %s", filepath, e)
 
     return combined

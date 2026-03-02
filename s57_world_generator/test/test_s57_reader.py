@@ -1,12 +1,10 @@
 """Tests for s57_reader module."""
 
-import numpy as np
 import pytest
 from osgeo import ogr
 
 from s57_world_generator.s57_reader import (
     BoundingBox,
-    Sounding,
     _clip_geometry,
     _extract_soundings_from_multipoint,
 )
