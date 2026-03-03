@@ -1,11 +1,28 @@
+# Copyright 2025 Roland Arsenault
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Build a continuous terrain surface from bathymetry and S57 data."""
 
+import logging
 from typing import Optional, Tuple
 
 import numpy as np
 from scipy.interpolate import LinearNDInterpolator
 
 from .s57_reader import BoundingBox, S57Features
+
+logger = logging.getLogger(__name__)
 
 # WGS84 meters per degree (approximate, varies with latitude)
 _METERS_PER_DEG_LAT = 111_320.0
@@ -127,6 +144,10 @@ def _synthesize_from_s57(
             )
         return terrain
     except Exception:
+        logger.warning(
+            "S57 terrain interpolation failed; falling back to flat surface",
+            exc_info=True,
+        )
         return np.zeros((grid_size, grid_size), dtype=np.float64)
 
 
