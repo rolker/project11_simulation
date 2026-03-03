@@ -1,7 +1,22 @@
+# Copyright 2025 Roland Arsenault
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Read S57 ENC chart features relevant to world generation."""
 
-from dataclasses import dataclass, field
 import logging
+import os
+from dataclasses import dataclass, field
 from typing import List, Optional
 
 from osgeo import gdal, ogr
@@ -19,9 +34,6 @@ def _gdal_error_handler(err_class, err_num, err_msg):
         logger.warning('GDAL: %s', err_msg.rstrip())
     elif err_class == gdal.CE_Failure:
         logger.error('GDAL: %s', err_msg.rstrip())
-
-
-gdal.PushErrorHandler(_gdal_error_handler)
 
 
 @dataclass
@@ -126,57 +138,63 @@ def read_s57_file(filepath: str, bbox: BoundingBox) -> S57Features:
     """
     features = S57Features()
 
-    ds = ogr.Open(filepath, 0)
-    if ds is None:
-        raise FileNotFoundError(f"Cannot open S57 file: {filepath}")
-
+    gdal.PushErrorHandler(_gdal_error_handler)
     try:
-        for layer_idx in range(ds.GetLayerCount()):
-            layer = ds.GetLayerByIndex(layer_idx)
-            layer.SetSpatialFilterRect(bbox.west, bbox.south, bbox.east, bbox.north)
-            layer.ResetReading()
+        ds = ogr.Open(filepath, 0)
+        if ds is None:
+            raise FileNotFoundError(f"Cannot open S57 file: {filepath}")
 
-            for feature in layer:
-                objl_idx = feature.GetFieldIndex("OBJL")
-                if objl_idx == -1:
-                    continue
-                objl = feature.GetFieldAsInteger(objl_idx)
-                geom = feature.GetGeometryRef()
-                if geom is None:
-                    continue
+        try:
+            for layer_idx in range(ds.GetLayerCount()):
+                layer = ds.GetLayerByIndex(layer_idx)
+                layer.SetSpatialFilterRect(
+                    bbox.west, bbox.south, bbox.east, bbox.north
+                )
+                layer.ResetReading()
 
-                if objl == 42:  # DEPARE
-                    drval1_idx = feature.GetFieldIndex("DRVAL1")
-                    drval2_idx = feature.GetFieldIndex("DRVAL2")
-                    if drval1_idx >= 0 and drval2_idx >= 0:
-                        min_depth = feature.GetFieldAsDouble(drval1_idx)
-                        max_depth = feature.GetFieldAsDouble(drval2_idx)
+                for feature in layer:
+                    objl_idx = feature.GetFieldIndex("OBJL")
+                    if objl_idx == -1:
+                        continue
+                    objl = feature.GetFieldAsInteger(objl_idx)
+                    geom = feature.GetGeometryRef()
+                    if geom is None:
+                        continue
+
+                    if objl == 42:  # DEPARE
+                        drval1_idx = feature.GetFieldIndex("DRVAL1")
+                        drval2_idx = feature.GetFieldIndex("DRVAL2")
+                        if drval1_idx >= 0 and drval2_idx >= 0:
+                            min_depth = feature.GetFieldAsDouble(drval1_idx)
+                            max_depth = feature.GetFieldAsDouble(drval2_idx)
+                            clipped = _clip_geometry(geom, bbox)
+                            if clipped is not None:
+                                features.depth_areas.append(
+                                    DepthArea(
+                                        min_depth=min_depth,
+                                        max_depth=max_depth,
+                                        geometry=clipped.Clone(),
+                                    )
+                                )
+
+                    elif objl == 129:  # SOUNDG
+                        features.soundings.extend(
+                            _extract_soundings_from_multipoint(geom, bbox)
+                        )
+
+                    elif objl == 71:  # LNDARE
                         clipped = _clip_geometry(geom, bbox)
                         if clipped is not None:
-                            features.depth_areas.append(
-                                DepthArea(
-                                    min_depth=min_depth,
-                                    max_depth=max_depth,
-                                    geometry=clipped.Clone(),
-                                )
-                            )
+                            features.land_areas.append(clipped.Clone())
 
-                elif objl == 129:  # SOUNDG
-                    features.soundings.extend(
-                        _extract_soundings_from_multipoint(geom, bbox)
-                    )
-
-                elif objl == 71:  # LNDARE
-                    clipped = _clip_geometry(geom, bbox)
-                    if clipped is not None:
-                        features.land_areas.append(clipped.Clone())
-
-                elif objl == 30:  # COALNE
-                    clipped = _clip_geometry(geom, bbox)
-                    if clipped is not None:
-                        features.coastlines.append(clipped.Clone())
+                    elif objl == 30:  # COALNE
+                        clipped = _clip_geometry(geom, bbox)
+                        if clipped is not None:
+                            features.coastlines.append(clipped.Clone())
+        finally:
+            ds = None
     finally:
-        ds = None
+        gdal.PopErrorHandler()
 
     return features
 
@@ -193,9 +211,6 @@ def read_enc_directory(enc_root: str, bbox: BoundingBox) -> S57Features:
     Returns:
         Merged S57Features from all charts intersecting the bounding box.
     """
-    import os
-
-    logger = logging.getLogger(__name__)
     combined = S57Features()
 
     for dirpath, _dirnames, filenames in os.walk(enc_root):
