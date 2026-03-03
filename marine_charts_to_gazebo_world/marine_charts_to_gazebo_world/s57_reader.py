@@ -4,9 +4,24 @@ from dataclasses import dataclass, field
 import logging
 from typing import List, Optional
 
-from osgeo import ogr
+from osgeo import gdal, ogr
 
 ogr.UseExceptions()
+
+logger = logging.getLogger(__name__)
+
+
+def _gdal_error_handler(err_class, err_num, err_msg):
+    """Route GDAL messages through Python logging, suppressing known noise."""
+    if 'Illegal feature attribute id' in err_msg:
+        return
+    if err_class == gdal.CE_Warning:
+        logger.warning('GDAL: %s', err_msg.rstrip())
+    elif err_class == gdal.CE_Failure:
+        logger.error('GDAL: %s', err_msg.rstrip())
+
+
+gdal.PushErrorHandler(_gdal_error_handler)
 
 
 @dataclass
