@@ -6,11 +6,17 @@
 
   <maintainer email="roland@ccom.unh.edu">Roland Arsenault</maintainer>
 
-  <license>BSD-2-Clause</license>
+  <license>Apache-2.0</license>
 
   <exec_depend>marine_charts_to_gazebo_world</exec_depend>
   <exec_depend>ros2launch</exec_depend>
   <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+  <test_depend>ament_copyright</test_depend>
 
   <export>
     <build_type>ament_python</build_type>

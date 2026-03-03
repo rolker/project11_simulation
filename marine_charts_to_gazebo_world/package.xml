@@ -6,13 +6,15 @@
 
   <maintainer email="roland@ccom.unh.edu">Roland Arsenault</maintainer>
 
-  <license>BSD-2-Clause</license>
+  <license>Apache-2.0</license>
 
   <depend>python3-gdal</depend>
   <depend>python3-numpy</depend>
   <depend>python3-scipy</depend>
   <depend>python3-requests</depend>
   <depend>python3-pil</depend>
+
+  <test_depend>python3-pytest</test_depend>
 
   <export>
     <build_type>ament_python</build_type>
