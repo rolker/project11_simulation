@@ -133,3 +133,44 @@ class TestGenerateWorldSdf:
                 content = f.read()
             assert "<sky>" in content
             assert "<grid>false</grid>" in content
+
+    def test_feature_models_default_empty(self):
+        """Default feature_models should produce no extra models."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sdf_path, _ = self._generate(tmpdir)
+            with open(sdf_path) as f:
+                content = f.read()
+            # Should not contain any feature model names
+            assert "building_" not in content
+            assert "buoy_" not in content
+
+    def test_feature_models_included(self):
+        """Feature models string should appear in the generated SDF."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            heightmap_info = {
+                "size_x": 1000.0,
+                "size_y": 1000.0,
+                "size_z": 50.0,
+                "pos_z": -30.0,
+                "min_elevation": -30.0,
+                "max_elevation": 20.0,
+            }
+            feature_xml = (
+                '    <model name="test_buoy">'
+                '<static>true</static></model>'
+            )
+            sdf_path = generate_world_sdf(
+                world_name="test_features",
+                center_lat=43.075,
+                center_lon=-70.71,
+                output_dir=tmpdir,
+                heightmap_info=heightmap_info,
+                feature_models=feature_xml,
+            )
+            with open(sdf_path) as f:
+                content = f.read()
+            assert "test_buoy" in content
+            # Verify it's valid XML
+            tree = ET.parse(sdf_path)
+            root = tree.getroot()
+            assert root.tag == "sdf"

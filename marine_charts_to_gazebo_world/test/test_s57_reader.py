@@ -20,6 +20,7 @@ from osgeo import ogr
 from marine_charts_to_gazebo_world.s57_reader import (
     BoundingBox,
     _clip_geometry,
+    _extract_point,
     _extract_soundings_from_multipoint,
 )
 
@@ -118,3 +119,31 @@ class TestExtractSoundings:
 
         result = _extract_soundings_from_multipoint(pt, bbox)
         assert len(result) == 0
+
+
+class TestExtractPoint:
+    def test_2d_point(self):
+        """Extract lat/lon from a 2D point geometry."""
+        pt = ogr.Geometry(ogr.wkbPoint)
+        pt.AddPoint(-70.5, 43.0)
+        result = _extract_point(pt)
+        assert result is not None
+        assert result[0] == pytest.approx(43.0)
+        assert result[1] == pytest.approx(-70.5)
+
+    def test_3d_point(self):
+        """Extract lat/lon from a 3D (25D) point geometry."""
+        pt = ogr.Geometry(ogr.wkbPoint25D)
+        pt.AddPoint(-70.5, 43.0, 10.0)
+        result = _extract_point(pt)
+        assert result is not None
+        assert result[0] == pytest.approx(43.0)
+        assert result[1] == pytest.approx(-70.5)
+
+    def test_non_point_returns_none(self):
+        """Non-point geometry should return None."""
+        line = ogr.Geometry(ogr.wkbLineString)
+        line.AddPoint(-70.5, 43.0)
+        line.AddPoint(-70.6, 43.1)
+        result = _extract_point(line)
+        assert result is None
