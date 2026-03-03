@@ -100,8 +100,18 @@ def generate_world_sdf(
     output_dir: str,
     heightmap_info: dict,
     camera_config: dict = None,
+    feature_models: str = "",
 ) -> str:
     """Generate a complete Gazebo Harmonic world SDF file.
+
+    The world includes:
+    - Spherical coordinates (WGS84, ENU)
+    - DART physics (4ms step)
+    - Standard Gazebo system plugins
+    - Terrain heightmap model
+    - Semi-transparent water surface plane
+    - Scene with sky and lighting
+    - Optional S57 chart feature models (buildings, buoys, etc.)
 
     Args:
         world_name: Name for the world (used in filename and SDF).
@@ -110,6 +120,7 @@ def generate_world_sdf(
         output_dir: Directory to write the world SDF into.
         heightmap_info: dict from terrain_to_heightmap() with terrain params.
         camera_config: optional dict with camera overrides (see _compute_camera).
+        feature_models: SDF model XML strings for S57 features (default empty).
 
     Returns:
         Path to the generated SDF file.
@@ -128,6 +139,7 @@ def generate_world_sdf(
         water_size_y=heightmap_info["size_y"],
         camera_pose=camera_pose,
         camera_far=camera_far,
+        feature_models=feature_models,
     )
 
     sdf_path = os.path.join(output_dir, f"{world_name}.sdf")

@@ -21,6 +21,7 @@ import textwrap
 from datetime import datetime
 
 from .bathy_fetcher import fetch_etopo
+from .feature_models import generate_feature_models
 from .heightmap import terrain_to_heightmap
 from .s57_reader import BoundingBox, read_enc_directory
 from .terrain import build_terrain
@@ -84,6 +85,11 @@ def parse_args(argv=None):
         choices=["north", "south", "east", "west"],
         help="Initial camera viewing direction (default: north).",
     )
+    parser.add_argument(
+        "--no-features",
+        action="store_true",
+        help="Disable S57 feature placement (buildings, buoys, etc.).",
+    )
     return parser.parse_args(argv)
 
 
@@ -133,6 +139,20 @@ def main(argv=None):
             f"{len(s57_features.land_areas)} land areas, "
             f"{len(s57_features.coastlines)} coastlines"
         )
+        n_features = sum([
+            len(s57_features.buildings), len(s57_features.pontoons),
+            len(s57_features.bridges), len(s57_features.buoys),
+            len(s57_features.beacons), len(s57_features.lights),
+        ])
+        if n_features > 0:
+            print(
+                f"  Found {len(s57_features.buildings)} buildings, "
+                f"{len(s57_features.pontoons)} pontoons, "
+                f"{len(s57_features.bridges)} bridges, "
+                f"{len(s57_features.buoys)} buoys, "
+                f"{len(s57_features.beacons)} beacons, "
+                f"{len(s57_features.lights)} lights"
+            )
 
     # Step 2: Fetch online bathymetry
     elevation = None
@@ -179,7 +199,21 @@ def main(argv=None):
     )
     print(f"  Heightmap saved to {heightmap_info['heightmap_path']}")
 
-    # Step 5: Generate world SDF
+    # Step 5: Generate feature models (optional)
+    feature_sdf = ""
+    if not args.no_features and s57_features is not None:
+        print("Generating S57 feature models...")
+        feature_sdf = generate_feature_models(
+            s57_features, bbox.center_lat, bbox.center_lon
+        )
+        if feature_sdf:
+            # Count models by counting <model name= occurrences
+            n_models = feature_sdf.count("<model name=")
+            print(f"  Generated {n_models} feature models")
+        else:
+            print("  No placeable features found")
+
+    # Step 6: Generate world SDF
     camera_config = {}
     if args.camera_far_scale is not None:
         camera_config["far_scale"] = args.camera_far_scale
@@ -194,10 +228,11 @@ def main(argv=None):
         output_dir=args.output_dir,
         heightmap_info=heightmap_info,
         camera_config=camera_config or None,
+        feature_models=feature_sdf,
     )
     print(f"  World SDF saved to {sdf_path}")
 
-    # Step 6: Write generation metadata
+    # Step 7: Write generation metadata
     _write_readme(args, bbox, terrain_info, heightmap_info)
 
     print(f"\nWorld generation complete: {args.output_dir}/")

@@ -239,5 +239,7 @@
       </link>
     </model>
 
+{feature_models}
+
   </world>
 </sdf>
