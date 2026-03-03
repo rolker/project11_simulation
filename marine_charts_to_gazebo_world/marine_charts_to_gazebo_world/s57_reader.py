@@ -73,6 +73,54 @@ class Sounding:
 
 
 @dataclass
+class Building:
+    """Building or structure polygon footprint (BUISGL, LNDMRK, SILTNK)."""
+
+    geometry: ogr.Geometry  # Polygon in WGS84
+    objl: int = 12  # S57 OBJL code (for height defaults in feature_models)
+
+
+@dataclass
+class Pontoon:
+    """Pontoon polygon footprint (PONTON)."""
+
+    geometry: ogr.Geometry  # Polygon in WGS84
+
+
+@dataclass
+class Bridge:
+    """Bridge polygon footprint (BRIDGE) with optional vertical clearance."""
+
+    geometry: ogr.Geometry  # Polygon in WGS84
+    clearance: float = 0.0  # VERCLR vertical clearance (meters)
+
+
+@dataclass
+class Buoy:
+    """Lateral buoy point feature (BOYLAT)."""
+
+    lat: float
+    lon: float
+    colour: int = 0  # S57 COLOUR attribute (1=white, 3=red, 4=green, 6=yellow)
+
+
+@dataclass
+class Beacon:
+    """Special purpose beacon point feature (BCNSPP)."""
+
+    lat: float
+    lon: float
+
+
+@dataclass
+class Light:
+    """Light point feature (LIGHTS)."""
+
+    lat: float
+    lon: float
+
+
+@dataclass
 class S57Features:
     """Collection of features extracted from S57 charts."""
 
@@ -80,6 +128,12 @@ class S57Features:
     soundings: List[Sounding] = field(default_factory=list)
     land_areas: List[ogr.Geometry] = field(default_factory=list)
     coastlines: List[ogr.Geometry] = field(default_factory=list)
+    buildings: List[Building] = field(default_factory=list)
+    pontoons: List[Pontoon] = field(default_factory=list)
+    bridges: List[Bridge] = field(default_factory=list)
+    buoys: List[Buoy] = field(default_factory=list)
+    beacons: List[Beacon] = field(default_factory=list)
+    lights: List[Light] = field(default_factory=list)
 
 
 def _clip_geometry(geom: ogr.Geometry, bbox: BoundingBox) -> Optional[ogr.Geometry]:
@@ -124,6 +178,14 @@ def _extract_soundings_from_multipoint(
                 soundings.append(Sounding(lat=lat, lon=lon, depth=depth))
 
     return soundings
+
+
+def _extract_point(geom: ogr.Geometry) -> Optional[tuple]:
+    """Extract (lat, lon) from a point geometry, or None."""
+    geom_type = geom.GetGeometryType() & 0xFF  # strip 25D flag
+    if geom_type == ogr.wkbPoint:
+        return (geom.GetY(), geom.GetX())
+    return None
 
 
 def read_s57_file(filepath: str, bbox: BoundingBox) -> S57Features:
@@ -191,6 +253,66 @@ def read_s57_file(filepath: str, bbox: BoundingBox) -> S57Features:
                         clipped = _clip_geometry(geom, bbox)
                         if clipped is not None:
                             features.coastlines.append(clipped.Clone())
+
+                    elif objl in (12, 73, 119):  # BUISGL, LNDMRK, SILTNK
+                        clipped = _clip_geometry(geom, bbox)
+                        if clipped is not None:
+                            features.buildings.append(
+                                Building(
+                                    geometry=clipped.Clone(),
+                                    objl=objl,
+                                )
+                            )
+
+                    elif objl == 95:  # PONTON
+                        clipped = _clip_geometry(geom, bbox)
+                        if clipped is not None:
+                            features.pontoons.append(
+                                Pontoon(geometry=clipped.Clone())
+                            )
+
+                    elif objl == 11:  # BRIDGE
+                        clipped = _clip_geometry(geom, bbox)
+                        if clipped is not None:
+                            verclr = 0.0
+                            verclr_idx = feature.GetFieldIndex("VERCLR")
+                            if verclr_idx >= 0:
+                                verclr = feature.GetFieldAsDouble(
+                                    verclr_idx
+                                )
+                            features.bridges.append(
+                                Bridge(
+                                    geometry=clipped.Clone(),
+                                    clearance=verclr,
+                                )
+                            )
+
+                    elif objl == 17:  # BOYLAT
+                        pt = _extract_point(geom)
+                        if pt is not None:
+                            colour = 0
+                            colour_idx = feature.GetFieldIndex("COLOUR")
+                            if colour_idx >= 0:
+                                colour = feature.GetFieldAsInteger(
+                                    colour_idx
+                                )
+                            features.buoys.append(
+                                Buoy(lat=pt[0], lon=pt[1], colour=colour)
+                            )
+
+                    elif objl == 9:  # BCNSPP
+                        pt = _extract_point(geom)
+                        if pt is not None:
+                            features.beacons.append(
+                                Beacon(lat=pt[0], lon=pt[1])
+                            )
+
+                    elif objl == 75:  # LIGHTS
+                        pt = _extract_point(geom)
+                        if pt is not None:
+                            features.lights.append(
+                                Light(lat=pt[0], lon=pt[1])
+                            )
         finally:
             ds = None
     finally:
@@ -223,6 +345,12 @@ def read_enc_directory(enc_root: str, bbox: BoundingBox) -> S57Features:
                     combined.soundings.extend(features.soundings)
                     combined.land_areas.extend(features.land_areas)
                     combined.coastlines.extend(features.coastlines)
+                    combined.buildings.extend(features.buildings)
+                    combined.pontoons.extend(features.pontoons)
+                    combined.bridges.extend(features.bridges)
+                    combined.buoys.extend(features.buoys)
+                    combined.beacons.extend(features.beacons)
+                    combined.lights.extend(features.lights)
                 except Exception as e:
                     logger.warning("Skipping %s: %s", filepath, e)
 
