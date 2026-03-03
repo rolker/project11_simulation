@@ -17,7 +17,7 @@ class TestTerrainToHeightmap:
         info = {"size_x": 1000.0, "size_y": 1000.0, "grid_size": 17}
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            result = terrain_to_heightmap(terrain, info, tmpdir)
+            terrain_to_heightmap(terrain, info, tmpdir)
 
             model_dir = os.path.join(tmpdir, "terrain")
             assert os.path.exists(os.path.join(model_dir, "heightmap.png"))
@@ -49,7 +49,6 @@ class TestTerrainToHeightmap:
 
     def test_elevation_range_in_result(self):
         """Result dict should contain correct elevation range."""
-        terrain = np.array([[0.0, 10.0], [5.0, -5.0]])
         terrain = np.array([
             [0.0, 5.0, 10.0],
             [2.0, -5.0, 8.0],
@@ -66,7 +65,7 @@ class TestTerrainToHeightmap:
             assert result["pos_z"] == pytest.approx(-5.0)
 
     def test_non_square_raises(self):
-        """Non-square input should raise AssertionError."""
+        """Non-square input should raise ValueError."""
         terrain = np.zeros((17, 33))
         info = {"size_x": 100.0, "size_y": 100.0, "grid_size": 17}
 
@@ -75,7 +74,7 @@ class TestTerrainToHeightmap:
                 terrain_to_heightmap(terrain, info, tmpdir)
 
     def test_invalid_grid_size_raises(self):
-        """Grid size not matching 2^n+1 should raise AssertionError."""
+        """Grid size not matching 2^n+1 should raise ValueError."""
         terrain = np.zeros((10, 10))  # 10 is not 2^n + 1
         info = {"size_x": 100.0, "size_y": 100.0, "grid_size": 10}
 

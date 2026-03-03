@@ -22,6 +22,7 @@ from launch.substitutions import LaunchConfiguration
 
 def _generate_world(context, *args, **kwargs):
     """Generate the world SDF if it doesn't already exist."""
+    verbose = LaunchConfiguration('verbose').perform(context) == 'true'
     pkg_share = get_package_share_directory('portsmouth_nh_gazebo')
     config_path = os.path.join(pkg_share, 'config', 'portsmouth.yaml')
 
@@ -74,7 +75,7 @@ def _generate_world(context, *args, **kwargs):
             ),
         ),
         ExecuteProcess(
-            cmd=['gz', 'sim', sdf_path],
+            cmd=['gz', 'sim', '-v4' if verbose else '-v1', sdf_path],
             output='screen',
         ),
     ]
