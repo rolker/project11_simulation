@@ -1,6 +1,25 @@
+# Copyright 2025 Roland Arsenault
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Generate Gazebo Harmonic SDF world files."""
 
 import os
+
+
+_TEMPLATE_PATH = os.path.join(
+    os.path.dirname(__file__), "world_template.sdf.xml"
+)
 
 
 def generate_world_sdf(
@@ -14,10 +33,10 @@ def generate_world_sdf(
 
     The world includes:
     - Spherical coordinates (WGS84, ENU)
-    - DART physics (4ms step, matching VRX)
+    - DART physics (4ms step)
     - Standard Gazebo system plugins
-    - VRX wave and wind plugins
     - Terrain heightmap model
+    - Semi-transparent water surface plane
     - Scene with sky and lighting
 
     Args:
@@ -30,8 +49,15 @@ def generate_world_sdf(
     Returns:
         Path to the generated SDF file.
     """
-    sdf_content = _build_world_sdf(
-        world_name, center_lat, center_lon, heightmap_info
+    with open(_TEMPLATE_PATH) as f:
+        template = f.read()
+
+    sdf_content = template.format(
+        world_name=world_name,
+        center_lat=center_lat,
+        center_lon=center_lon,
+        water_size_x=heightmap_info["size_x"],
+        water_size_y=heightmap_info["size_y"],
     )
 
     sdf_path = os.path.join(output_dir, f"{world_name}.sdf")
@@ -39,270 +65,3 @@ def generate_world_sdf(
         f.write(sdf_content)
 
     return sdf_path
-
-
-def _build_world_sdf(
-    world_name: str,
-    center_lat: float,
-    center_lon: float,
-    heightmap_info: dict,
-) -> str:
-    """Build the complete SDF XML string."""
-
-    return f"""\
-<?xml version="1.0" ?>
-
-<sdf version="1.9">
-  <world name="{world_name}">
-
-    <physics name="4ms" type="dart">
-      <max_step_size>0.004</max_step_size>
-      <real_time_factor>1.0</real_time_factor>
-    </physics>
-
-{_gui_plugins()}
-
-{_system_plugins()}
-
-    <scene>
-      <sky></sky>
-      <grid>false</grid>
-      <ambient>1.0 1.0 1.0 1</ambient>
-      <background>0.8 0.8 0.8 1</background>
-    </scene>
-
-    <spherical_coordinates>
-      <surface_model>EARTH_WGS84</surface_model>
-      <world_frame_orientation>ENU</world_frame_orientation>
-      <latitude_deg>{center_lat:.6f}</latitude_deg>
-      <longitude_deg>{center_lon:.6f}</longitude_deg>
-      <elevation>0.0</elevation>
-      <heading_deg>0.0</heading_deg>
-    </spherical_coordinates>
-
-    <light type="directional" name="sun">
-      <cast_shadows>true</cast_shadows>
-      <pose>0 0 10 0 0 0</pose>
-      <diffuse>0.8 0.8 0.8 1</diffuse>
-      <specular>0.2 0.2 0.2 1</specular>
-      <attenuation>
-        <range>1000</range>
-        <constant>0.9</constant>
-        <linear>0.01</linear>
-        <quadratic>0.001</quadratic>
-      </attenuation>
-      <direction>-0.5 0.1 -0.9</direction>
-    </light>
-
-    <!-- Generated terrain -->
-    <include>
-      <uri>terrain</uri>
-    </include>
-
-    <!-- Water surface at z=0 -->
-    <model name="water_plane">
-      <static>true</static>
-      <link name="link">
-        <visual name="water_visual">
-          <pose>0 0 0 0 0 0</pose>
-          <geometry>
-            <plane>
-              <normal>0 0 1</normal>
-              <size>{heightmap_info['size_x']:.0f} {heightmap_info['size_y']:.0f}</size>
-            </plane>
-          </geometry>
-          <material>
-            <ambient>0.0 0.05 0.3 0.8</ambient>
-            <diffuse>0.0 0.1 0.5 0.8</diffuse>
-            <specular>0.5 0.5 0.5 0.5</specular>
-          </material>
-        </visual>
-      </link>
-    </model>
-
-  </world>
-</sdf>
-"""
-
-
-def _gui_plugins() -> str:
-    """Generate the GUI plugin section (matching VRX pattern)."""
-    return """\
-    <gui fullscreen="0">
-
-      <plugin filename="MinimalScene" name="3D View">
-        <gz-gui>
-          <title>3D View</title>
-          <property type="bool" key="showTitleBar">false</property>
-          <property type="string" key="state">docked</property>
-        </gz-gui>
-        <engine>ogre2</engine>
-        <scene>scene</scene>
-        <ambient_light>0.4 0.4 0.4</ambient_light>
-        <background_color>0.8 0.8 0.8</background_color>
-        <camera_pose>0 0 50 0 0.5 0</camera_pose>
-        <camera_clip>
-          <near>0.25</near>
-          <far>10000</far>
-        </camera_clip>
-      </plugin>
-
-      <plugin filename="EntityContextMenuPlugin" name="Entity context menu">
-        <gz-gui>
-          <property key="state" type="string">floating</property>
-          <property key="width" type="double">5</property>
-          <property key="height" type="double">5</property>
-          <property key="showTitleBar" type="bool">false</property>
-        </gz-gui>
-      </plugin>
-      <plugin filename="GzSceneManager" name="Scene Manager">
-        <gz-gui>
-          <property key="resizable" type="bool">false</property>
-          <property key="width" type="double">5</property>
-          <property key="height" type="double">5</property>
-          <property key="state" type="string">floating</property>
-          <property key="showTitleBar" type="bool">false</property>
-        </gz-gui>
-      </plugin>
-      <plugin filename="InteractiveViewControl" name="Interactive view control">
-        <gz-gui>
-          <property key="resizable" type="bool">false</property>
-          <property key="width" type="double">5</property>
-          <property key="height" type="double">5</property>
-          <property key="state" type="string">floating</property>
-          <property key="showTitleBar" type="bool">false</property>
-        </gz-gui>
-      </plugin>
-      <plugin filename="CameraTracking" name="Camera Tracking">
-        <gz-gui>
-          <property key="resizable" type="bool">false</property>
-          <property key="width" type="double">5</property>
-          <property key="height" type="double">5</property>
-          <property key="state" type="string">floating</property>
-          <property key="showTitleBar" type="bool">false</property>
-        </gz-gui>
-      </plugin>
-      <plugin filename="MarkerManager" name="Marker manager">
-        <gz-gui>
-          <property key="resizable" type="bool">false</property>
-          <property key="width" type="double">5</property>
-          <property key="height" type="double">5</property>
-          <property key="state" type="string">floating</property>
-          <property key="showTitleBar" type="bool">false</property>
-        </gz-gui>
-      </plugin>
-      <plugin filename="SelectEntities" name="Select Entities">
-        <gz-gui>
-          <property key="resizable" type="bool">false</property>
-          <property key="width" type="double">5</property>
-          <property key="height" type="double">5</property>
-          <property key="state" type="string">floating</property>
-          <property key="showTitleBar" type="bool">false</property>
-        </gz-gui>
-      </plugin>
-      <plugin filename="VisualizationCapabilities" name="Visualization Capabilities">
-        <gz-gui>
-          <property key="resizable" type="bool">false</property>
-          <property key="width" type="double">5</property>
-          <property key="height" type="double">5</property>
-          <property key="state" type="string">floating</property>
-          <property key="showTitleBar" type="bool">false</property>
-        </gz-gui>
-      </plugin>
-
-      <plugin filename="WorldControl" name="World control">
-        <gz-gui>
-          <title>World control</title>
-          <property type="bool" key="showTitleBar">false</property>
-          <property type="bool" key="resizable">false</property>
-          <property type="double" key="height">72</property>
-          <property type="double" key="width">121</property>
-          <property type="double" key="z">1</property>
-          <property type="string" key="state">floating</property>
-          <anchors target="3D View">
-            <line own="left" target="left"/>
-            <line own="bottom" target="bottom"/>
-          </anchors>
-        </gz-gui>
-        <play_pause>true</play_pause>
-        <step>true</step>
-        <start_paused>true</start_paused>
-        <use_event>true</use_event>
-      </plugin>
-
-      <plugin filename="WorldStats" name="World stats">
-        <gz-gui>
-          <title>World stats</title>
-          <property type="bool" key="showTitleBar">false</property>
-          <property type="bool" key="resizable">false</property>
-          <property type="double" key="height">110</property>
-          <property type="double" key="width">290</property>
-          <property type="double" key="z">1</property>
-          <property type="string" key="state">floating</property>
-          <anchors target="3D View">
-            <line own="right" target="right"/>
-            <line own="bottom" target="bottom"/>
-          </anchors>
-        </gz-gui>
-        <sim_time>true</sim_time>
-        <real_time>true</real_time>
-        <real_time_factor>true</real_time_factor>
-        <iterations>true</iterations>
-      </plugin>
-
-      <plugin filename="EntityTree" name="Entity tree">
-        <gz-gui>
-          <property type="string" key="state">docked_collapsed</property>
-        </gz-gui>
-      </plugin>
-
-      <plugin filename="ComponentInspector" name="Component inspector">
-        <gz-gui>
-          <property type="string" key="state">docked_collapsed</property>
-        </gz-gui>
-      </plugin>
-
-    </gui>"""
-
-
-def _system_plugins() -> str:
-    """Generate the system plugin section."""
-    return """\
-    <plugin
-      filename="gz-sim-physics-system"
-      name="gz::sim::systems::Physics">
-    </plugin>
-    <plugin
-      filename="gz-sim-user-commands-system"
-      name="gz::sim::systems::UserCommands">
-    </plugin>
-    <plugin
-      filename="gz-sim-sensors-system"
-      name="gz::sim::systems::Sensors">
-      <render_engine>ogre2</render_engine>
-      <disable_on_drained_battery>true</disable_on_drained_battery>
-    </plugin>
-    <plugin
-      filename="gz-sim-imu-system"
-      name="gz::sim::systems::Imu">
-    </plugin>
-    <plugin
-      filename="gz-sim-magnetometer-system"
-      name="gz::sim::systems::Magnetometer">
-    </plugin>
-    <plugin
-      filename="gz-sim-forcetorque-system"
-      name="gz::sim::systems::ForceTorque">
-    </plugin>
-    <plugin
-      filename="gz-sim-scene-broadcaster-system"
-      name="gz::sim::systems::SceneBroadcaster">
-    </plugin>
-    <plugin
-      filename="gz-sim-contact-system"
-      name="gz::sim::systems::Contact">
-    </plugin>
-    <plugin
-      filename="gz-sim-navsat-system"
-      name="gz::sim::systems::NavSat">
-    </plugin>"""
