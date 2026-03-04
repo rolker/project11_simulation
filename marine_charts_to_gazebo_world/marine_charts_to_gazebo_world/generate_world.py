@@ -271,6 +271,10 @@ def main(argv=None):
             len(s57_features.buildings), len(s57_features.pontoons),
             len(s57_features.bridges), len(s57_features.buoys),
             len(s57_features.beacons), len(s57_features.lights),
+            len(s57_features.shore_constructions),
+            len(s57_features.piles),
+            len(s57_features.mooring_facilities),
+            len(s57_features.cranes), len(s57_features.pylons),
         ])
         if n_features > 0:
             print(
@@ -279,7 +283,12 @@ def main(argv=None):
                 f"{len(s57_features.bridges)} bridges, "
                 f"{len(s57_features.buoys)} buoys, "
                 f"{len(s57_features.beacons)} beacons, "
-                f"{len(s57_features.lights)} lights"
+                f"{len(s57_features.lights)} lights, "
+                f"{len(s57_features.shore_constructions)} shore constructions, "
+                f"{len(s57_features.piles)} piles, "
+                f"{len(s57_features.mooring_facilities)} mooring facilities, "
+                f"{len(s57_features.cranes)} cranes, "
+                f"{len(s57_features.pylons)} pylons"
             )
 
     # Step 1.5: OSM enrichment (optional)

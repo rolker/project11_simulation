@@ -105,19 +105,67 @@ class Bridge:
 
 @dataclass
 class Buoy:
-    """Lateral buoy point feature (BOYLAT)."""
+    """Buoy point feature (BOYLAT, BOYISD, BOYSAW, BOYSPP, etc.)."""
 
     lat: float
     lon: float
     colour: int = 0  # S57 COLOUR attribute (1=white, 3=red, 4=green, 6=yellow)
+    objl: int = 17  # S57 OBJL code (17=BOYLAT, 16=BOYISD, 18=BOYSAW, etc.)
 
 
 @dataclass
 class Beacon:
-    """Special purpose beacon point feature (BCNSPP)."""
+    """Beacon point feature (BCNSPP, BCNLAT, BCNCAR, etc.)."""
 
     lat: float
     lon: float
+    colour: int = 0  # S57 COLOUR attribute
+
+
+@dataclass
+class ShoreCon:
+    """Shoreline construction (SLCONS): seawall, pier, jetty, breakwater."""
+
+    geometry: ogr.Geometry  # Line, Polygon, or Point in WGS84
+    catslc: int = 0  # CATSLC category (1=breakwater, 4=pier, etc.)
+    watlev: int = 0  # WATLEV water level (2=always dry, 4=covers/uncovers)
+
+
+@dataclass
+class Pile:
+    """Pile/post in water (PILPNT)."""
+
+    lat: float
+    lon: float
+
+
+@dataclass
+class MooringFacility:
+    """Mooring/warping facility (MORFAC)."""
+
+    lat: float
+    lon: float
+    catmor: int = 0  # 1=dolphin, 3=bollard, 5=post, 7=mooring buoy
+
+
+@dataclass
+class Crane:
+    """Port crane (CRANES)."""
+
+    lat: float
+    lon: float
+    catcrn: int = 0  # 2=container/gantry, etc.
+    height: float = 0.0  # HEIGHT attribute
+
+
+@dataclass
+class Pylon:
+    """Bridge pylon/support (PYLONS)."""
+
+    lat: float
+    lon: float
+    catpyl: int = 0  # 4=bridge pylon, 5=bridge pier
+    height: float = 0.0
 
 
 @dataclass
@@ -142,6 +190,11 @@ class S57Features:
     buoys: List[Buoy] = field(default_factory=list)
     beacons: List[Beacon] = field(default_factory=list)
     lights: List[Light] = field(default_factory=list)
+    shore_constructions: List[ShoreCon] = field(default_factory=list)
+    piles: List[Pile] = field(default_factory=list)
+    mooring_facilities: List[MooringFacility] = field(default_factory=list)
+    cranes: List[Crane] = field(default_factory=list)
+    pylons: List[Pylon] = field(default_factory=list)
 
 
 def _polygon_area_m2(geom: ogr.Geometry, center_lat_rad: float) -> float:
@@ -451,6 +504,60 @@ def _clip_features_to_area(
         if effective_area.Contains(pt):
             clipped.lights.append(light)
 
+    # Shore constructions (line/polygon/point geometry)
+    for sc in features.shore_constructions:
+        geom_type = sc.geometry.GetGeometryType() & 0xFF
+        if geom_type in (ogr.wkbPoint,):
+            # Point containment
+            if effective_area.Contains(sc.geometry):
+                clipped.shore_constructions.append(sc)
+        elif geom_type in (ogr.wkbLineString, ogr.wkbMultiLineString):
+            g = sc.geometry.Intersection(effective_area)
+            g = _repair_geometry(g)
+            if g is not None and not g.IsEmpty():
+                gtype = g.GetGeometryType() & 0xFF
+                if gtype in (ogr.wkbLineString, ogr.wkbMultiLineString,
+                             ogr.wkbGeometryCollection):
+                    clipped.shore_constructions.append(ShoreCon(
+                        geometry=g.Clone(),
+                        catslc=sc.catslc, watlev=sc.watlev,
+                    ))
+        elif geom_type in (ogr.wkbPolygon, ogr.wkbMultiPolygon):
+            g = sc.geometry.Intersection(effective_area)
+            g = _repair_geometry(g)
+            if g is not None and not g.IsEmpty():
+                gtype = g.GetGeometryType() & 0xFF
+                if gtype in (ogr.wkbPolygon, ogr.wkbMultiPolygon):
+                    clipped.shore_constructions.append(ShoreCon(
+                        geometry=g.Clone(),
+                        catslc=sc.catslc, watlev=sc.watlev,
+                    ))
+
+    # Point features: piles, mooring facilities, cranes, pylons
+    for pile in features.piles:
+        pt = ogr.Geometry(ogr.wkbPoint)
+        pt.AddPoint(pile.lon, pile.lat)
+        if effective_area.Contains(pt):
+            clipped.piles.append(pile)
+
+    for mf in features.mooring_facilities:
+        pt = ogr.Geometry(ogr.wkbPoint)
+        pt.AddPoint(mf.lon, mf.lat)
+        if effective_area.Contains(pt):
+            clipped.mooring_facilities.append(mf)
+
+    for crane in features.cranes:
+        pt = ogr.Geometry(ogr.wkbPoint)
+        pt.AddPoint(crane.lon, crane.lat)
+        if effective_area.Contains(pt):
+            clipped.cranes.append(crane)
+
+    for pylon in features.pylons:
+        pt = ogr.Geometry(ogr.wkbPoint)
+        pt.AddPoint(pylon.lon, pylon.lat)
+        if effective_area.Contains(pt):
+            clipped.pylons.append(pylon)
+
     return clipped
 
 
@@ -665,7 +772,9 @@ def read_s57_file(filepath: str, bbox: BoundingBox) -> S57Features:
                                 )
                             )
 
-                    elif objl == 17:  # BOYLAT
+                    elif objl in (14, 15, 16, 17, 18, 19):
+                        # BOY* buoys: BOYCAR(14), BOYINB(15), BOYISD(16),
+                        # BOYLAT(17), BOYSAW(18), BOYSPP(19)
                         pt = _extract_point(geom)
                         if pt is not None:
                             colour = 0
@@ -675,14 +784,27 @@ def read_s57_file(filepath: str, bbox: BoundingBox) -> S57Features:
                                     colour_idx
                                 )
                             features.buoys.append(
-                                Buoy(lat=pt[0], lon=pt[1], colour=colour)
+                                Buoy(
+                                    lat=pt[0], lon=pt[1],
+                                    colour=colour, objl=objl,
+                                )
                             )
 
-                    elif objl == 9:  # BCNSPP
+                    elif objl in (5, 6, 7, 8, 9):
+                        # BCN* beacons: BCNCAR(5), BCNISD(6), BCNLAT(7),
+                        # BCNSAW(8), BCNSPP(9)
                         pt = _extract_point(geom)
                         if pt is not None:
+                            colour = 0
+                            colour_idx = feature.GetFieldIndex("COLOUR")
+                            if colour_idx >= 0:
+                                colour = feature.GetFieldAsInteger(
+                                    colour_idx
+                                )
                             features.beacons.append(
-                                Beacon(lat=pt[0], lon=pt[1])
+                                Beacon(
+                                    lat=pt[0], lon=pt[1], colour=colour,
+                                )
                             )
 
                     elif objl == 75:  # LIGHTS
@@ -690,6 +812,90 @@ def read_s57_file(filepath: str, bbox: BoundingBox) -> S57Features:
                         if pt is not None:
                             features.lights.append(
                                 Light(lat=pt[0], lon=pt[1])
+                            )
+
+                    elif objl == 122:  # SLCONS
+                        catslc = 0
+                        catslc_idx = feature.GetFieldIndex("CATSLC")
+                        if catslc_idx >= 0:
+                            catslc = feature.GetFieldAsInteger(catslc_idx)
+                        watlev = 0
+                        watlev_idx = feature.GetFieldIndex("WATLEV")
+                        if watlev_idx >= 0:
+                            watlev = feature.GetFieldAsInteger(watlev_idx)
+                        clipped = _clip_geometry(geom, bbox)
+                        if clipped is not None:
+                            features.shore_constructions.append(
+                                ShoreCon(
+                                    geometry=clipped.Clone(),
+                                    catslc=catslc, watlev=watlev,
+                                )
+                            )
+
+                    elif objl == 90:  # PILPNT
+                        pt = _extract_point(geom)
+                        if pt is not None:
+                            features.piles.append(
+                                Pile(lat=pt[0], lon=pt[1])
+                            )
+
+                    elif objl == 84:  # MORFAC
+                        pt = _extract_point(geom)
+                        if pt is not None:
+                            catmor = 0
+                            catmor_idx = feature.GetFieldIndex("CATMOR")
+                            if catmor_idx >= 0:
+                                catmor = feature.GetFieldAsInteger(
+                                    catmor_idx
+                                )
+                            features.mooring_facilities.append(
+                                MooringFacility(
+                                    lat=pt[0], lon=pt[1], catmor=catmor,
+                                )
+                            )
+
+                    elif objl == 35:  # CRANES
+                        pt = _extract_point(geom)
+                        if pt is not None:
+                            catcrn = 0
+                            catcrn_idx = feature.GetFieldIndex("CATCRN")
+                            if catcrn_idx >= 0:
+                                catcrn = feature.GetFieldAsInteger(
+                                    catcrn_idx
+                                )
+                            height = 0.0
+                            height_idx = feature.GetFieldIndex("HEIGHT")
+                            if height_idx >= 0:
+                                height = feature.GetFieldAsDouble(
+                                    height_idx
+                                )
+                            features.cranes.append(
+                                Crane(
+                                    lat=pt[0], lon=pt[1],
+                                    catcrn=catcrn, height=height,
+                                )
+                            )
+
+                    elif objl == 98:  # PYLONS
+                        pt = _extract_point(geom)
+                        if pt is not None:
+                            catpyl = 0
+                            catpyl_idx = feature.GetFieldIndex("CATPYL")
+                            if catpyl_idx >= 0:
+                                catpyl = feature.GetFieldAsInteger(
+                                    catpyl_idx
+                                )
+                            height = 0.0
+                            height_idx = feature.GetFieldIndex("HEIGHT")
+                            if height_idx >= 0:
+                                height = feature.GetFieldAsDouble(
+                                    height_idx
+                                )
+                            features.pylons.append(
+                                Pylon(
+                                    lat=pt[0], lon=pt[1],
+                                    catpyl=catpyl, height=height,
+                                )
                             )
         finally:
             ds = None
@@ -768,6 +974,15 @@ def read_enc_directory(enc_root: str, bbox: BoundingBox) -> S57Features:
             combined.buoys.extend(clipped.buoys)
             combined.beacons.extend(clipped.beacons)
             combined.lights.extend(clipped.lights)
+            combined.shore_constructions.extend(
+                clipped.shore_constructions
+            )
+            combined.piles.extend(clipped.piles)
+            combined.mooring_facilities.extend(
+                clipped.mooring_facilities
+            )
+            combined.cranes.extend(clipped.cranes)
+            combined.pylons.extend(clipped.pylons)
         except Exception as e:
             logger.warning("Skipping %s: %s", filepath, e)
 
