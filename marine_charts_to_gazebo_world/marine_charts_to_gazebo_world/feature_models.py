@@ -316,6 +316,64 @@ def _light_model(name, x, y, z=0.0):
     )
 
 
+def _coastline_wall_model(name, geometry, center_lat, center_lon, height=5.0,
+                          wall_width=0.3):
+    """Generate SDF wall segments along a coastline linestring for debugging.
+
+    Each segment between consecutive points becomes a thin box oriented
+    along the segment direction.
+    """
+    geom_type = geometry.GetGeometryType() & 0xFF
+    if geom_type == 2:  # wkbLineString
+        lines = [geometry]
+    elif geom_type == 5:  # wkbMultiLineString
+        lines = [geometry.GetGeometryRef(i)
+                 for i in range(geometry.GetGeometryCount())]
+    else:
+        return ''
+
+    segments = []
+    seg_idx = 0
+    for line in lines:
+        n = line.GetPointCount()
+        for i in range(n - 1):
+            lon0, lat0 = line.GetX(i), line.GetY(i)
+            lon1, lat1 = line.GetX(i + 1), line.GetY(i + 1)
+            x0, y0 = _latlon_to_enu(lat0, lon0, center_lat, center_lon)
+            x1, y1 = _latlon_to_enu(lat1, lon1, center_lat, center_lon)
+            mx = (x0 + x1) / 2.0
+            my = (y0 + y1) / 2.0
+            dx, dy = x1 - x0, y1 - y0
+            length = math.sqrt(dx * dx + dy * dy)
+            if length < 0.1:
+                continue
+            yaw = math.atan2(dy, dx)
+            segments.append(
+                f'    <model name="{name}_seg{seg_idx:04d}">\n'
+                f'      <static>true</static>\n'
+                f'      <pose>{mx:.2f} {my:.2f} {height / 2:.2f} '
+                f'0 0 {yaw:.4f}</pose>\n'
+                f'      <link name="link">\n'
+                f'        <visual name="visual">\n'
+                f'          <geometry>\n'
+                f'            <box>\n'
+                f'              <size>{length:.2f} {wall_width} '
+                f'{height:.1f}</size>\n'
+                f'            </box>\n'
+                f'          </geometry>\n'
+                f'          <material>\n'
+                f'            <ambient>0.0 0.9 0.9 1.0</ambient>\n'
+                f'            <diffuse>0.0 1.0 1.0 1.0</diffuse>\n'
+                f'          </material>\n'
+                f'        </visual>\n'
+                f'      </link>\n'
+                f'    </model>'
+            )
+            seg_idx += 1
+
+    return '\n\n'.join(segments)
+
+
 def generate_feature_models(
     features, center_lat, center_lon,
     terrain=None, bbox=None, debug=False,
@@ -424,6 +482,17 @@ def generate_feature_models(
             light.lat, light.lon, terrain, bbox
         )
         models.append(_light_model(f'light_{i:04d}', x, y, z=z))
+
+    # Debug: coastline walls (simplified to reduce segment count)
+    if debug and features.coastlines:
+        for i, coastline in enumerate(features.coastlines):
+            simplified = coastline.Simplify(0.0002)  # ~20m tolerance
+            wall = _coastline_wall_model(
+                f'coastline_{i:04d}', simplified,
+                center_lat, center_lon,
+            )
+            if wall:
+                models.append(wall)
 
     if not models:
         return ''

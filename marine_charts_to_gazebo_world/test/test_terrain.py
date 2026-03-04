@@ -18,7 +18,9 @@ import numpy as np
 import pytest
 from osgeo import ogr
 
-from marine_charts_to_gazebo_world.s57_reader import BoundingBox, Sounding, S57Features
+from marine_charts_to_gazebo_world.s57_reader import (
+    BoundingBox, DepthArea, Sounding, S57Features,
+)
 from marine_charts_to_gazebo_world.terrain import build_terrain, _sample_raster
 
 
@@ -211,3 +213,87 @@ class TestBuildS57Terrain:
         )
         # Coastline pixels should have non-negative elevation
         assert info["max_elevation"] >= 0.0
+
+
+class TestDepthAreaClamping:
+    """Tests for depth area clamping of interpolated water depths."""
+
+    def test_depth_clamped_to_depare_range(self):
+        """Interpolated depth outside DRVAL range gets clamped."""
+        bbox = BoundingBox(south=43.0, west=-71.0, north=43.02, east=-70.98)
+        # Depth area covering the entire bbox: 3-8m deep
+        da_poly = _make_polygon([
+            (-71.0, 43.0),
+            (-70.98, 43.0),
+            (-70.98, 43.02),
+            (-71.0, 43.02),
+        ])
+        depth_area = DepthArea(
+            min_depth=3.0, max_depth=8.0,
+            geometry=da_poly, compilation_scale=50000.0,
+        )
+        # Soundings spread across the area — one very deep (15m),
+        # one very shallow (1m), both outside the DEPARE range
+        soundings = [
+            Sounding(lat=43.005, lon=-70.995, depth=15.0),
+            Sounding(lat=43.005, lon=-70.985, depth=1.0),
+            Sounding(lat=43.015, lon=-70.995, depth=15.0),
+            Sounding(lat=43.015, lon=-70.985, depth=1.0),
+        ]
+        features = S57Features(
+            depth_areas=[depth_area], soundings=soundings,
+        )
+        terrain, info = build_terrain(
+            bbox=bbox, s57_features=features, grid_size=33,
+        )
+        # All cells should be clamped to DEPARE range:
+        # depths 3-8m → elevation -8 to -3
+        water_cells = terrain[terrain < 0]
+        assert len(water_cells) > 0, "Should have water cells"
+        assert np.min(water_cells) >= -8.0 - 0.01
+        assert np.max(water_cells) <= -3.0 + 0.01
+
+    def test_scale_ordering_detailed_wins(self):
+        """Overlapping depth areas: more detailed chart wins."""
+        bbox = BoundingBox(south=43.0, west=-71.0, north=43.02, east=-70.98)
+        # Coarse chart: whole bbox, 5-20m
+        coarse_poly = _make_polygon([
+            (-70.999, 43.001),
+            (-70.981, 43.001),
+            (-70.981, 43.019),
+            (-70.999, 43.019),
+        ])
+        coarse_da = DepthArea(
+            min_depth=5.0, max_depth=20.0,
+            geometry=coarse_poly, compilation_scale=100000.0,
+        )
+        # Detailed chart: center area, 8-12m (tighter range)
+        detail_poly = _make_polygon([
+            (-70.995, 43.006),
+            (-70.985, 43.006),
+            (-70.985, 43.014),
+            (-70.995, 43.014),
+        ])
+        detail_da = DepthArea(
+            min_depth=8.0, max_depth=12.0,
+            geometry=detail_poly, compilation_scale=20000.0,
+        )
+        # Soundings at 15m everywhere — in the detailed area they should
+        # be clamped to 12m, in the coarse-only area to 20m
+        soundings = [
+            Sounding(lat=43.005, lon=-70.995, depth=15.0),
+            Sounding(lat=43.005, lon=-70.985, depth=15.0),
+            Sounding(lat=43.015, lon=-70.995, depth=15.0),
+            Sounding(lat=43.015, lon=-70.985, depth=15.0),
+        ]
+        features = S57Features(
+            depth_areas=[coarse_da, detail_da], soundings=soundings,
+        )
+        terrain, info = build_terrain(
+            bbox=bbox, s57_features=features, grid_size=33,
+        )
+        # Center of grid (within detailed chart area) should use 8-12m range
+        center = terrain[16, 16]
+        # The 15m sounding should be clamped to -12m elevation (12m depth)
+        assert center >= -12.0 - 0.01
+        assert center <= -8.0 + 0.01

@@ -43,8 +43,9 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--enc-root",
+        default=os.environ.get("ROS_S57_ENC_ROOT"),
         help="Root directory containing S57 ENC .000 files. "
-        "If omitted, only online bathymetry data is used.",
+        "Defaults to $ROS_S57_ENC_ROOT if set.",
     )
     parser.add_argument(
         "--bounds",

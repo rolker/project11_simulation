@@ -22,7 +22,7 @@ from osgeo import gdal, ogr, osr
 from scipy.interpolate import LinearNDInterpolator
 from scipy.ndimage import distance_transform_edt
 
-from .s57_reader import BoundingBox, S57Features
+from .s57_reader import BoundingBox, DepthArea, S57Features
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +160,19 @@ def _build_s57_terrain(
         grid_lons, grid_lats, s57_features, grid_size
     )
 
+    # Clamp interpolated depths to depth area ranges
+    if s57_features.depth_areas:
+        da_min, da_max = _rasterize_depth_areas(
+            s57_features.depth_areas, bbox, grid_size,
+        )
+        da_mask = ~np.isnan(da_min)
+        if np.any(da_mask):
+            max_elev = -da_min[da_mask]  # shallowest allowed (elevation)
+            min_elev = -da_max[da_mask]  # deepest allowed (elevation)
+            water_terrain[da_mask] = np.clip(
+                water_terrain[da_mask], min_elev, max_elev,
+            )
+
     # Combine: land gets ramp elevation, water gets sounding depths
     terrain = np.where(land_mask, land_elevation, water_terrain)
 
@@ -232,6 +245,65 @@ def _rasterize_land(
     rast_ds = None
 
     return land_mask
+
+
+def _rasterize_depth_areas(
+    depth_areas: list, bbox: BoundingBox, grid_size: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Rasterize depth areas with scale ordering onto min/max depth grids.
+
+    Depth areas are sorted by compilation_scale descending (least detailed
+    first) so that more detailed charts overwrite less detailed ones.
+
+    Returns:
+        Tuple of (min_depth_grid, max_depth_grid) with NaN where no
+        depth area covers the cell.  Values are in meters, positive down.
+    """
+    min_depth = np.full((grid_size, grid_size), np.nan, dtype=np.float64)
+    max_depth = np.full((grid_size, grid_size), np.nan, dtype=np.float64)
+
+    if not depth_areas:
+        return min_depth, max_depth
+
+    # Sort by compilation_scale descending (coarsest first, detailed last)
+    sorted_areas = sorted(
+        depth_areas, key=lambda da: da.compilation_scale, reverse=True,
+    )
+
+    # GeoTransform matching _rasterize_land
+    pixel_width = (bbox.east - bbox.west) / grid_size
+    pixel_height = (bbox.north - bbox.south) / grid_size
+    gt = (bbox.west, pixel_width, 0.0, bbox.north, 0.0, -pixel_height)
+
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(4326)
+    wkt = srs.ExportToWkt()
+    rast_driver = gdal.GetDriverByName('MEM')
+
+    for da in sorted_areas:
+        # Rasterize this polygon to a mask
+        mem_driver = ogr.GetDriverByName('Memory')
+        mem_ds = mem_driver.CreateDataSource('da')
+        mem_layer = mem_ds.CreateLayer('da', srs, ogr.wkbPolygon)
+        feat = ogr.Feature(mem_layer.GetLayerDefn())
+        feat.SetGeometry(da.geometry)
+        mem_layer.CreateFeature(feat)
+
+        rast_ds = rast_driver.Create('', grid_size, grid_size, 1, gdal.GDT_Byte)
+        rast_ds.SetGeoTransform(gt)
+        rast_ds.SetProjection(wkt)
+        band = rast_ds.GetRasterBand(1)
+        band.Fill(0)
+        gdal.RasterizeLayer(rast_ds, [1], mem_layer, burn_values=[1])
+
+        mask = band.ReadAsArray().astype(bool)
+        min_depth[mask] = da.min_depth
+        max_depth[mask] = da.max_depth
+
+        mem_ds = None
+        rast_ds = None
+
+    return min_depth, max_depth
 
 
 def _synthesize_from_s57(
