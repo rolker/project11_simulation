@@ -86,6 +86,12 @@ def parse_args(argv=None):
         help="Initial camera viewing direction (default: north).",
     )
     parser.add_argument(
+        "--fetch-etopo",
+        action="store_true",
+        help="Fetch ETOPO online bathymetry as base elevation. "
+        "By default, terrain is built from S57 data only (land ramp + soundings).",
+    )
+    parser.add_argument(
         "--no-features",
         action="store_true",
         help="Disable S57 feature placement (buildings, buoys, etc.).",
@@ -160,27 +166,23 @@ def main(argv=None):
                 f"{len(s57_features.lights)} lights"
             )
 
-    # Step 2: Fetch online bathymetry
+    # Step 2: Fetch online bathymetry (opt-in)
     elevation = None
     metadata = None
-    print("Fetching ETOPO elevation data...")
-    try:
-        elevation, metadata = fetch_etopo(bbox, cache_dir=args.cache_dir)
-        print(f"  Downloaded {elevation.shape[0]}x{elevation.shape[1]} grid")
-        print(
-            f"  Elevation range: {elevation.min():.1f}m to "
-            f"{elevation.max():.1f}m"
-        )
-    except Exception as e:
-        print(f"  Warning: ETOPO download failed: {e}", file=sys.stderr)
-        if s57_features is None or not s57_features.soundings:
+    if args.fetch_etopo:
+        print("Fetching ETOPO elevation data...")
+        try:
+            elevation, metadata = fetch_etopo(bbox, cache_dir=args.cache_dir)
+            print(f"  Downloaded {elevation.shape[0]}x{elevation.shape[1]} grid")
             print(
-                "Error: No elevation data available. Provide --enc-root with "
-                "S57 charts or ensure network access for ETOPO download.",
-                file=sys.stderr,
+                f"  Elevation range: {elevation.min():.1f}m to "
+                f"{elevation.max():.1f}m"
             )
-            return 1
-        print("  Falling back to S57-only terrain generation.")
+        except Exception as e:
+            print(f"  Warning: ETOPO download failed: {e}", file=sys.stderr)
+            print("  Falling back to S57-only terrain generation.")
+    else:
+        print("Using S57-only terrain (land ramp + soundings).")
 
     # Step 3: Build terrain surface
     print(f"Building terrain ({grid_size}x{grid_size})...")

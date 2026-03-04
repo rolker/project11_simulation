@@ -15,6 +15,7 @@
 """Convert S57 features to parametric SDF model elements for Gazebo."""
 
 import math
+import re
 
 from marine_autonomy.wgs84 import toECEFfromDegrees
 
@@ -43,6 +44,19 @@ _S57_COLOURS = {
     5: (0.0, 0.0, 1.0),    # blue
     6: (1.0, 1.0, 0.0),    # yellow
 }
+
+
+def _sanitize_objnam(objnam: str) -> str:
+    """Sanitize S57 OBJNAM for use as part of a model name.
+
+    Lowercase, replace non-alphanumeric chars with underscores, collapse
+    runs of underscores, strip leading/trailing underscores, truncate to
+    40 characters.
+    """
+    name = objnam.lower()
+    name = re.sub(r'[^a-z0-9]+', '_', name)
+    name = name.strip('_')
+    return name[:40]
 
 
 def _latlon_to_enu(lat, lon, ref_lat, ref_lon):
@@ -336,8 +350,14 @@ def generate_feature_models(
             height = _BUILDING_HEIGHTS.get(building.objl, 5.0)
             amb = '0.6 0.6 0.55 1.0'
             dif = '0.7 0.7 0.65 1.0'
+        # Include OBJNAM in model name if available
+        name = f'building_{i:04d}'
+        if building.objnam:
+            suffix = _sanitize_objnam(building.objnam)
+            if suffix:
+                name = f'building_{i:04d}_{suffix}'
         model = _polygon_to_polyline_model(
-            f'building_{i:04d}', building.geometry,
+            name, building.geometry,
             center_lat, center_lon, height, z=z,
             ambient=amb, diffuse=dif,
         )

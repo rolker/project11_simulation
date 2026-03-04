@@ -21,6 +21,7 @@ from osgeo import ogr
 
 from marine_charts_to_gazebo_world.feature_models import (
     _latlon_to_enu,
+    _sanitize_objnam,
     generate_feature_models,
 )
 from marine_charts_to_gazebo_world.s57_reader import (
@@ -126,6 +127,69 @@ class TestBuildingModel:
         features = S57Features(buildings=[Building(geometry=poly, objl=119)])
         result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
         assert '<height>8.0</height>' in result
+
+
+class TestBuildingObjnam:
+
+    def test_objnam_in_model_name(self):
+        """Building with OBJNAM should include sanitized name."""
+        poly = _make_polygon([
+            (-70.711, 43.076),
+            (-70.710, 43.076),
+            (-70.710, 43.077),
+            (-70.711, 43.077),
+        ])
+        features = S57Features(
+            buildings=[Building(geometry=poly, objl=12,
+                                objnam='Coast Guard Station')]
+        )
+        result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
+        assert '<model name="building_0000_coast_guard_station">' in result
+
+    def test_empty_objnam_uses_default(self):
+        """Building without OBJNAM should use numeric-only name."""
+        poly = _make_polygon([
+            (-70.711, 43.076),
+            (-70.710, 43.076),
+            (-70.710, 43.077),
+            (-70.711, 43.077),
+        ])
+        features = S57Features(
+            buildings=[Building(geometry=poly, objl=12, objnam='')]
+        )
+        result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
+        assert '<model name="building_0000">' in result
+
+    def test_special_chars_sanitized(self):
+        """Special characters in OBJNAM should be replaced with underscores."""
+        poly = _make_polygon([
+            (-70.711, 43.076),
+            (-70.710, 43.076),
+            (-70.710, 43.077),
+            (-70.711, 43.077),
+        ])
+        features = S57Features(
+            buildings=[Building(geometry=poly, objl=12,
+                                objnam='Bldg #42 (Main)')]
+        )
+        result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
+        assert '<model name="building_0000_bldg_42_main">' in result
+
+
+class TestSanitizeObjnam:
+
+    def test_basic_sanitization(self):
+        assert _sanitize_objnam('Coast Guard Station') == 'coast_guard_station'
+
+    def test_special_chars(self):
+        assert _sanitize_objnam('Bldg #42 (Main)') == 'bldg_42_main'
+
+    def test_truncation(self):
+        long_name = 'a' * 60
+        assert len(_sanitize_objnam(long_name)) == 40
+
+    def test_empty_string(self):
+        assert _sanitize_objnam('') == ''
 
 
 class TestPontoonModel:
