@@ -45,6 +45,75 @@ _S57_COLOURS = {
     6: (1.0, 1.0, 0.0),    # yellow
 }
 
+# OSM building:material -> (ambient, diffuse) SDF color strings
+_OSM_MATERIAL_COLORS = {
+    'brick':    ('0.6 0.3 0.2 1.0', '0.7 0.4 0.3 1.0'),
+    'concrete': ('0.6 0.6 0.6 1.0', '0.7 0.7 0.7 1.0'),
+    'wood':     ('0.5 0.35 0.2 1.0', '0.6 0.45 0.3 1.0'),
+    'metal':    ('0.5 0.5 0.55 1.0', '0.6 0.6 0.65 1.0'),
+    'glass':    ('0.4 0.5 0.6 1.0', '0.5 0.6 0.7 1.0'),
+    'stone':    ('0.55 0.5 0.45 1.0', '0.65 0.6 0.55 1.0'),
+}
+
+# Named CSS colors -> (R, G, B) for building:colour overrides
+_CSS_COLORS = {
+    'red':     (0.8, 0.2, 0.2),
+    'blue':    (0.2, 0.3, 0.8),
+    'green':   (0.2, 0.6, 0.2),
+    'yellow':  (0.8, 0.8, 0.2),
+    'white':   (0.9, 0.9, 0.9),
+    'black':   (0.15, 0.15, 0.15),
+    'grey':    (0.5, 0.5, 0.5),
+    'gray':    (0.5, 0.5, 0.5),
+    'brown':   (0.55, 0.35, 0.2),
+    'beige':   (0.8, 0.75, 0.65),
+    'tan':     (0.7, 0.6, 0.45),
+    'orange':  (0.85, 0.5, 0.2),
+    'pink':    (0.85, 0.6, 0.65),
+    'maroon':  (0.5, 0.15, 0.15),
+}
+
+
+def _parse_hex_color(hex_str: str):
+    """Parse a hex color string (#RGB or #RRGGBB) to (R, G, B) floats."""
+    s = hex_str.lstrip('#')
+    if len(s) == 3:
+        r, g, b = int(s[0], 16) / 15.0, int(s[1], 16) / 15.0, int(s[2], 16) / 15.0
+    elif len(s) == 6:
+        r = int(s[0:2], 16) / 255.0
+        g = int(s[2:4], 16) / 255.0
+        b = int(s[4:6], 16) / 255.0
+    else:
+        return None
+    return (r, g, b)
+
+
+def _osm_material_to_colors(material: str, colour: str):
+    """Convert OSM building:material and building:colour to SDF colors.
+
+    Returns (ambient, diffuse) as SDF color strings.
+    """
+    # Colour override takes priority
+    if colour:
+        colour_lower = colour.lower().strip()
+        rgb = _CSS_COLORS.get(colour_lower)
+        if rgb is None and colour_lower.startswith('#'):
+            rgb = _parse_hex_color(colour_lower)
+        if rgb is not None:
+            r, g, b = rgb
+            amb = f'{r * 0.85:.2f} {g * 0.85:.2f} {b * 0.85:.2f} 1.0'
+            dif = f'{r:.2f} {g:.2f} {b:.2f} 1.0'
+            return amb, dif
+
+    # Fall back to material
+    if material:
+        result = _OSM_MATERIAL_COLORS.get(material.lower().strip())
+        if result is not None:
+            return result
+
+    # Default building colors
+    return '0.6 0.6 0.55 1.0', '0.7 0.7 0.65 1.0'
+
 
 def _sanitize_objnam(objnam: str) -> str:
     """Sanitize S57 OBJNAM for use as part of a model name.
@@ -405,9 +474,19 @@ def generate_feature_models(
             height = 0.2
             amb, dif = _DEBUG_COLORS['building']
         else:
-            height = _BUILDING_HEIGHTS.get(building.objl, 5.0)
-            amb = '0.6 0.6 0.55 1.0'
-            dif = '0.7 0.7 0.65 1.0'
+            # Height priority: OSM height > OBJL default
+            if building.osm_height is not None:
+                height = building.osm_height
+            else:
+                height = _BUILDING_HEIGHTS.get(building.objl, 5.0)
+            # Material colors from OSM
+            if building.osm_material or building.osm_colour:
+                amb, dif = _osm_material_to_colors(
+                    building.osm_material, building.osm_colour,
+                )
+            else:
+                amb = '0.6 0.6 0.55 1.0'
+                dif = '0.7 0.7 0.65 1.0'
         # Include OBJNAM in model name if available
         name = f'building_{i:04d}'
         if building.objnam:

@@ -23,6 +23,8 @@ from datetime import datetime
 from .bathy_fetcher import fetch_etopo
 from .feature_models import generate_feature_models
 from .heightmap import terrain_to_heightmap
+from .osm_fetcher import fetch_osm_features
+from .osm_matcher import match_and_enrich
 from .s57_reader import BoundingBox, read_enc_directory
 from .terrain import build_terrain
 from .world_builder import generate_world_sdf
@@ -103,6 +105,12 @@ def parse_args(argv=None):
         help="Use thin (0.2m) extrusions with distinct colors per feature "
         "type for footprint visualization.",
     )
+    parser.add_argument(
+        "--osm",
+        action="store_true",
+        help="Enrich S57 buildings with OpenStreetMap data (heights, "
+        "materials, colours) via the Overpass API.",
+    )
     return parser.parse_args(argv)
 
 
@@ -166,6 +174,14 @@ def main(argv=None):
                 f"{len(s57_features.beacons)} beacons, "
                 f"{len(s57_features.lights)} lights"
             )
+
+    # Step 1.5: OSM enrichment (optional)
+    if args.osm and s57_features is not None and s57_features.buildings:
+        print("Fetching OSM data...")
+        osm_features = fetch_osm_features(bbox, cache_dir=args.cache_dir)
+        print(f"  Found {len(osm_features.buildings)} OSM buildings")
+        s57_features, n_matched = match_and_enrich(s57_features, osm_features)
+        print(f"  Matched {n_matched} buildings with OSM data")
 
     # Step 2: Fetch online bathymetry (opt-in)
     elevation = None

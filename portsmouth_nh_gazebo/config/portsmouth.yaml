@@ -10,6 +10,9 @@ world_name: portsmouth_nh_harbor
 # Heightmap grid: 2^grid_power + 1 (9 = 513x513)
 grid_power: 9
 
+# Enrich S57 features with OpenStreetMap data (heights, materials, colours)
+osm: true
+
 # Optional: path to S57 ENC data directory.
 # Set ROS_S57_ENC_ROOT env var or override here.
 # enc_root: /path/to/ENC_ROOT

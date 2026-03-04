@@ -121,6 +121,14 @@ def main():
     if 'direction' in camera:
         gen_args.extend(['--camera-direction', camera['direction']])
 
+    # OSM enrichment (optional)
+    if config.get('osm'):
+        gen_args.append('--osm')
+
+    # ETOPO bathymetry (optional)
+    if config.get('fetch_etopo'):
+        gen_args.append('--fetch-etopo')
+
     # ENC root: config override takes precedence, then env var
     enc_root = config.get('enc_root') or os.environ.get('ROS_S57_ENC_ROOT')
     if enc_root:

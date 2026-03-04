@@ -83,6 +83,9 @@ class Building:
     lnam: str = ''  # S57 Long Name (unique within a chart)
     scamin: float = float('inf')  # Scale minimum (lower = more detailed)
     objnam: str = ''  # Feature name (for debugging)
+    osm_height: Optional[float] = None  # from OSM height or levels*3
+    osm_material: str = ''  # from OSM building:material
+    osm_colour: str = ''  # from OSM building:colour
 
 
 @dataclass
@@ -404,6 +407,9 @@ def _clip_features_to_area(
                     lnam=b.lnam,
                     scamin=b.scamin,
                     objnam=b.objnam,
+                    osm_height=b.osm_height,
+                    osm_material=b.osm_material,
+                    osm_colour=b.osm_colour,
                 ))
 
     # Pontoons (polygons)
