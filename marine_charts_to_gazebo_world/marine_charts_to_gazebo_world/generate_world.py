@@ -176,12 +176,15 @@ def main(argv=None):
             )
 
     # Step 1.5: OSM enrichment (optional)
-    if args.osm and s57_features is not None and s57_features.buildings:
+    if args.osm and s57_features is not None:
         print("Fetching OSM data...")
         osm_features = fetch_osm_features(bbox, cache_dir=args.cache_dir)
         print(f"  Found {len(osm_features.buildings)} OSM buildings")
-        s57_features, n_matched = match_and_enrich(s57_features, osm_features)
-        print(f"  Matched {n_matched} buildings with OSM data")
+        s57_features, n_matched, n_added = match_and_enrich(
+            s57_features, osm_features,
+        )
+        print(f"  Matched {n_matched} S57 buildings with OSM data")
+        print(f"  Added {n_added} OSM-only buildings")
 
     # Step 2: Fetch online bathymetry (opt-in)
     elevation = None

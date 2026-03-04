@@ -20,7 +20,7 @@ import math
 from osgeo import ogr
 
 from .osm_fetcher import OsmFeatures
-from .s57_reader import S57Features
+from .s57_reader import Building, S57Features
 
 ogr.UseExceptions()
 
@@ -69,26 +69,32 @@ def match_and_enrich(
 
     For each S57 building, finds the best OSM match by centroid proximity
     and IoU. When matched, copies OSM height, material, and colour onto
-    the S57 Building dataclass, and optionally replaces the footprint
-    polygon.
+    the S57 Building dataclass, and replaces the footprint polygon.
+
+    Unmatched OSM buildings are converted to S57 Building objects and
+    appended to the buildings list.
 
     Args:
         s57_features: S57Features with buildings to enrich.
         osm_features: OsmFeatures with OSM buildings to match against.
 
     Returns:
-        Tuple of (enriched S57Features, number of matched buildings).
+        Tuple of (enriched S57Features, number of matched buildings,
+        number of added OSM-only buildings).
     """
-    if not s57_features.buildings or not osm_features.buildings:
-        return s57_features, 0
+    if not osm_features.buildings:
+        return s57_features, 0, 0
 
+    # Track which OSM buildings get matched
+    matched_osm_indices = set()
     n_matched = 0
 
     for building in s57_features.buildings:
         best_iou = 0.0
         best_osm = None
+        best_idx = -1
 
-        for osm_building in osm_features.buildings:
+        for idx, osm_building in enumerate(osm_features.buildings):
             # Quick centroid distance filter
             dist = _centroid_distance_deg(
                 building.geometry, osm_building.geometry,
@@ -100,8 +106,11 @@ def match_and_enrich(
             if score > best_iou:
                 best_iou = score
                 best_osm = osm_building
+                best_idx = idx
 
         if best_osm is not None and best_iou >= _MIN_IOU:
+            matched_osm_indices.add(best_idx)
+
             # Enrich with OSM data
             if best_osm.height is not None:
                 building.osm_height = best_osm.height
@@ -122,4 +131,26 @@ def match_and_enrich(
                 best_iou,
             )
 
-    return s57_features, n_matched
+    # Add unmatched OSM buildings as new Building objects
+    n_added = 0
+    for idx, osm_building in enumerate(osm_features.buildings):
+        if idx in matched_osm_indices:
+            continue
+
+        osm_height = None
+        if osm_building.height is not None:
+            osm_height = osm_building.height
+        elif osm_building.levels is not None:
+            osm_height = osm_building.levels * 3.0
+
+        s57_features.buildings.append(Building(
+            geometry=osm_building.geometry.Clone(),
+            objl=12,  # generic building
+            objnam=osm_building.name,
+            osm_height=osm_height,
+            osm_material=osm_building.material,
+            osm_colour=osm_building.colour,
+        ))
+        n_added += 1
+
+    return s57_features, n_matched, n_added
