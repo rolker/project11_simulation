@@ -90,6 +90,12 @@ def parse_args(argv=None):
         action="store_true",
         help="Disable S57 feature placement (buildings, buoys, etc.).",
     )
+    parser.add_argument(
+        "--debug-features",
+        action="store_true",
+        help="Use thin (0.2m) extrusions with distinct colors per feature "
+        "type for footprint visualization.",
+    )
     return parser.parse_args(argv)
 
 
@@ -204,7 +210,8 @@ def main(argv=None):
     if not args.no_features and s57_features is not None:
         print("Generating S57 feature models...")
         feature_sdf = generate_feature_models(
-            s57_features, bbox.center_lat, bbox.center_lon
+            s57_features, bbox.center_lat, bbox.center_lon,
+            terrain=terrain, bbox=bbox, debug=args.debug_features,
         )
         if feature_sdf:
             # Count models by counting <model name= occurrences

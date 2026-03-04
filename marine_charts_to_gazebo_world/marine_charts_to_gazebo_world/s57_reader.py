@@ -15,6 +15,7 @@
 """Read S57 ENC chart features relevant to world generation."""
 
 import logging
+import math
 import os
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -78,6 +79,9 @@ class Building:
 
     geometry: ogr.Geometry  # Polygon in WGS84
     objl: int = 12  # S57 OBJL code (for height defaults in feature_models)
+    lnam: str = ''  # S57 Long Name (unique within a chart)
+    scamin: float = float('inf')  # Scale minimum (lower = more detailed)
+    objnam: str = ''  # Feature name (for debugging)
 
 
 @dataclass
@@ -134,6 +138,24 @@ class S57Features:
     buoys: List[Buoy] = field(default_factory=list)
     beacons: List[Beacon] = field(default_factory=list)
     lights: List[Light] = field(default_factory=list)
+
+
+def _polygon_area_m2(geom: ogr.Geometry, center_lat_rad: float) -> float:
+    """Approximate polygon area in m² using WGS84 radii of curvature.
+
+    Uses the geometry's GetArea() in deg² and scales by local metric factors.
+    """
+    from marine_autonomy.wgs84 import M, N
+    area_deg2 = abs(geom.GetArea())
+    m_lat = M(center_lat_rad)  # meters per radian in lat
+    n_lon = N(center_lat_rad) * math.cos(center_lat_rad)  # meters per radian in lon
+    # deg² → rad² → m²
+    rad_per_deg = math.pi / 180.0
+    return area_deg2 * (rad_per_deg ** 2) * m_lat * n_lon
+
+
+# Maximum area (m²) for LNDMRK/SILTNK polygons to be treated as buildings
+_MAX_LANDMARK_AREA_M2 = 5_000.0
 
 
 def _clip_geometry(geom: ogr.Geometry, bbox: BoundingBox) -> Optional[ogr.Geometry]:
@@ -257,10 +279,56 @@ def read_s57_file(filepath: str, bbox: BoundingBox) -> S57Features:
                     elif objl in (12, 73, 119):  # BUISGL, LNDMRK, SILTNK
                         clipped = _clip_geometry(geom, bbox)
                         if clipped is not None:
+                            # Filter oversized LNDMRK/SILTNK polygons
+                            if objl in (73, 119):
+                                center_lat_rad = math.radians(
+                                    bbox.center_lat
+                                )
+                                area = _polygon_area_m2(
+                                    clipped, center_lat_rad
+                                )
+                                if area > _MAX_LANDMARK_AREA_M2:
+                                    objnam = ''
+                                    idx = feature.GetFieldIndex("OBJNAM")
+                                    if idx >= 0:
+                                        objnam = (
+                                            feature.GetFieldAsString(idx)
+                                            or ''
+                                        )
+                                    logger.debug(
+                                        "Skipping large OBJL %d '%s' "
+                                        "(%.0f m²)",
+                                        objl, objnam, area,
+                                    )
+                                    continue
+                            # Extract metadata
+                            lnam = ''
+                            lnam_idx = feature.GetFieldIndex("LNAM")
+                            if lnam_idx >= 0:
+                                lnam = (
+                                    feature.GetFieldAsString(lnam_idx)
+                                    or ''
+                                )
+                            scamin = float('inf')
+                            scamin_idx = feature.GetFieldIndex("SCAMIN")
+                            if scamin_idx >= 0:
+                                val = feature.GetFieldAsDouble(scamin_idx)
+                                if val > 0:
+                                    scamin = val
+                            objnam = ''
+                            objnam_idx = feature.GetFieldIndex("OBJNAM")
+                            if objnam_idx >= 0:
+                                objnam = (
+                                    feature.GetFieldAsString(objnam_idx)
+                                    or ''
+                                )
                             features.buildings.append(
                                 Building(
                                     geometry=clipped.Clone(),
                                     objl=objl,
+                                    lnam=lnam,
+                                    scamin=scamin,
+                                    objnam=objnam,
                                 )
                             )
 
@@ -354,4 +422,32 @@ def read_enc_directory(enc_root: str, bbox: BoundingBox) -> S57Features:
                 except Exception as e:
                     logger.warning("Skipping %s: %s", filepath, e)
 
+    # Deduplicate BUISGL buildings by LNAM (keep lowest SCAMIN)
+    combined.buildings = _dedup_buildings(combined.buildings)
+
     return combined
+
+
+def _dedup_buildings(buildings: List[Building]) -> List[Building]:
+    """Remove duplicate buildings that share the same LNAM.
+
+    For BUISGL features appearing in multiple chart scales, keep the
+    record with the lowest SCAMIN (most detailed chart). Buildings
+    without LNAM are always kept.
+    """
+    best_by_lnam: dict[str, Building] = {}
+    no_lnam: list[Building] = []
+
+    for b in buildings:
+        if not b.lnam:
+            no_lnam.append(b)
+            continue
+        existing = best_by_lnam.get(b.lnam)
+        if existing is None or b.scamin < existing.scamin:
+            best_by_lnam[b.lnam] = b
+
+    n_dupes = len(buildings) - len(best_by_lnam) - len(no_lnam)
+    if n_dupes > 0:
+        logger.info("Removed %d duplicate buildings by LNAM", n_dupes)
+
+    return no_lnam + list(best_by_lnam.values())

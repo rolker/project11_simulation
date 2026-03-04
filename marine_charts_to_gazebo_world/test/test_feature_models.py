@@ -147,7 +147,7 @@ class TestPontoonModel:
 class TestBridgeModel:
 
     def test_bridge_with_clearance(self):
-        """Bridge with VERCLR should use clearance as height."""
+        """Bridge with VERCLR should place deck at clearance height."""
         poly = _make_polygon([
             (-70.711, 43.076),
             (-70.710, 43.076),
@@ -159,10 +159,12 @@ class TestBridgeModel:
         )
         result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
         assert '<model name="bridge_0000">' in result
-        assert '<height>15.0</height>' in result
+        # Deck thickness is 1.0m, placed at z=15.0
+        assert '<height>1.0</height>' in result
+        assert '15.00 0 0 0' in result
 
     def test_bridge_default_height(self):
-        """Bridge without clearance should use default 10.0m."""
+        """Bridge without clearance should use default 10.0m clearance."""
         poly = _make_polygon([
             (-70.711, 43.076),
             (-70.710, 43.076),
@@ -171,7 +173,9 @@ class TestBridgeModel:
         ])
         features = S57Features(bridges=[Bridge(geometry=poly, clearance=0.0)])
         result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
-        assert '<height>10.0</height>' in result
+        # Deck at z=10.0 with 1.0m thickness
+        assert '<height>1.0</height>' in result
+        assert '10.00 0 0 0' in result
 
 
 class TestBuoyModel:
