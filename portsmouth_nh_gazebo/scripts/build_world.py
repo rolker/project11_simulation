@@ -111,8 +111,21 @@ def main():
         f"{bounds['south']},{bounds['west']},{bounds['north']},{bounds['east']}",
         '--output-dir', args.output_dir,
         '--world-name', world_name,
-        '--grid-power', str(grid_power),
     ]
+
+    # Multi-tile or single-tile terrain
+    tiles = config.get('tiles')
+    if tiles:
+        for tile in tiles:
+            tile_str = (
+                f"{tile['name']}:"
+                f"{tile['south']},{tile['west']},"
+                f"{tile['north']},{tile['east']}:"
+                f"{tile['grid_power']}"
+            )
+            gen_args.extend(['--tile', tile_str])
+    else:
+        gen_args.extend(['--grid-power', str(grid_power)])
 
     # Camera config (optional)
     camera = config.get('camera', {})

@@ -1,14 +1,29 @@
-# Portsmouth NH harbor region parameters
+# Portsmouth NH harbor region with Isles of Shoals
+# Overall bounds define S57/OSM query area and water plane
 bounds:
-  south: 43.065
-  west: -70.72
-  north: 43.085
-  east: -70.70
+  south: 42.96
+  west: -70.76
+  north: 43.09
+  east: -70.59
 
 world_name: portsmouth_nh_harbor
 
-# Heightmap grid: 2^grid_power + 1 (9 = 513x513)
-grid_power: 9
+# Multi-tile terrain: each tile has its own resolution
+# Format: name, bounds (south,west,north,east), grid_power (2^N+1)
+tiles:
+  - name: harbor
+    south: 43.04
+    west: -70.76
+    north: 43.09
+    east: -70.59
+    grid_power: 10   # 1025x1025
+
+  - name: ocean
+    south: 42.96
+    west: -70.76
+    north: 43.04
+    east: -70.59
+    grid_power: 9    # 513x513
 
 # Enrich S57 features with OpenStreetMap data (heights, materials, colours)
 osm: true

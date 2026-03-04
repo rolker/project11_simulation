@@ -68,7 +68,7 @@ def _build_overpass_query(bbox: BoundingBox) -> str:
     """Build Overpass QL query for buildings, piers, and bridges."""
     b = f"{bbox.south},{bbox.west},{bbox.north},{bbox.east}"
     return (
-        "[out:json][timeout:30];\n"
+        "[out:json][timeout:120];\n"
         "(\n"
         f'  way["building"]({b});\n'
         f'  relation["building"]({b});\n'
@@ -193,7 +193,7 @@ def fetch_osm_features(
         response = requests.get(
             _OVERPASS_URL,
             params={"data": query},
-            timeout=(30, 60),
+            timeout=(30, 180),
         )
         response.raise_for_status()
         data = response.json()

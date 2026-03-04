@@ -214,9 +214,7 @@
     </light>
 
     <!-- Generated terrain -->
-    <include>
-      <uri>{terrain_model_name}</uri>
-    </include>
+{terrain_includes}
 
     <!-- Water surface at z=0 -->
     <model name="water_plane">
