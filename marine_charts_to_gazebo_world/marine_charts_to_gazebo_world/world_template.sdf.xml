@@ -215,7 +215,7 @@
 
     <!-- Generated terrain -->
     <include>
-      <uri>terrain</uri>
+      <uri>{terrain_model_name}</uri>
     </include>
 
     <!-- Water surface at z=0 -->

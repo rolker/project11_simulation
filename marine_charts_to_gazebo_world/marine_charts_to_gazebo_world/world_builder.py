@@ -56,6 +56,7 @@ def generate_world_sdf(
         world_name=world_name,
         center_lat=center_lat,
         center_lon=center_lon,
+        terrain_model_name=heightmap_info["model_name"],
         water_size_x=heightmap_info["size_x"],
         water_size_y=heightmap_info["size_y"],
     )

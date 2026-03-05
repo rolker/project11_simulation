@@ -27,6 +27,7 @@ class TestGenerateWorldSdf:
     def _generate(self, tmpdir, world_name="test_world"):
         """Helper to generate a world SDF and return parsed XML."""
         heightmap_info = {
+            "model_name": "test_world_terrain",
             "size_x": 1000.0,
             "size_y": 1000.0,
             "size_z": 50.0,
@@ -112,7 +113,7 @@ class TestGenerateWorldSdf:
             _, tree = self._generate(tmpdir)
             includes = tree.findall(".//include")
             uris = [inc.findtext("uri") for inc in includes]
-            assert "terrain" in uris
+            assert "test_world_terrain" in uris
 
     def test_water_plane(self):
         """World should include a water surface plane at z=0."""

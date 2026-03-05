@@ -158,8 +158,12 @@ def main(argv=None):
     )
 
     # Step 4: Generate heightmap
-    print("Generating heightmap...")
-    heightmap_info = terrain_to_heightmap(terrain, terrain_info, args.output_dir)
+    terrain_model_name = f"{args.world_name}_terrain"
+    print(f"Generating heightmap (model: {terrain_model_name})...")
+    heightmap_info = terrain_to_heightmap(
+        terrain, terrain_info, args.output_dir,
+        model_name=terrain_model_name,
+    )
     print(f"  Heightmap saved to {heightmap_info['heightmap_path']}")
 
     # Step 5: Generate world SDF
