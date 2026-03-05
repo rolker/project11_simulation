@@ -56,6 +56,13 @@ def main():
         '--grid-power', str(grid_power),
     ]
 
+    # Camera config (optional)
+    camera = config.get('camera', {})
+    if 'far_scale' in camera:
+        gen_args.extend(['--camera-far-scale', str(camera['far_scale'])])
+    if 'direction' in camera:
+        gen_args.extend(['--camera-direction', camera['direction']])
+
     # ENC root: config override takes precedence, then env var
     enc_root = config.get('enc_root') or os.environ.get('ROS_S57_ENC_ROOT')
     if enc_root:
