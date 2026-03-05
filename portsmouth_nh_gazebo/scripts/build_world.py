@@ -27,6 +27,47 @@ import yaml
 from marine_charts_to_gazebo_world.generate_world import main as generate_main
 
 
+def _validate_config(config, config_path):
+    """Validate required config keys and return clear errors."""
+    if not isinstance(config, dict):
+        print(
+            f'Error: {config_path} must contain a YAML mapping.',
+            file=sys.stderr,
+        )
+        return False
+
+    required = ('bounds', 'world_name')
+    missing = [k for k in required if k not in config]
+    if missing:
+        print(
+            f"Error: {config_path} is missing required key(s): "
+            f"{', '.join(repr(k) for k in missing)}.",
+            file=sys.stderr,
+        )
+        return False
+
+    bounds = config['bounds']
+    if not isinstance(bounds, dict):
+        print(
+            f"Error: 'bounds' in {config_path} must be a mapping with "
+            "keys 'south', 'west', 'north', 'east'.",
+            file=sys.stderr,
+        )
+        return False
+
+    bounds_keys = ('south', 'west', 'north', 'east')
+    missing_bounds = [k for k in bounds_keys if k not in bounds]
+    if missing_bounds:
+        print(
+            f"Error: 'bounds' in {config_path} is missing key(s): "
+            f"{', '.join(repr(k) for k in missing_bounds)}.",
+            file=sys.stderr,
+        )
+        return False
+
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Build-time world generation from config file.'
@@ -39,14 +80,31 @@ def main():
         '--output-dir', required=True,
         help='Directory to write generated world files into.',
     )
+    parser.add_argument(
+        '--expected-world-name',
+        help='Expected world_name from CMake. Validates against YAML.',
+    )
     args = parser.parse_args()
 
     with open(args.config) as f:
         config = yaml.safe_load(f)
 
+    if not _validate_config(config, args.config):
+        sys.exit(1)
+
     bounds = config['bounds']
     world_name = config['world_name']
     grid_power = config.get('grid_power', 9)
+
+    # Validate world_name matches what CMake expects
+    if args.expected_world_name and world_name != args.expected_world_name:
+        print(
+            f"Error: world_name in {args.config} is {world_name!r} but "
+            f"CMake expects {args.expected_world_name!r}. Update the YAML "
+            f"or the add_gazebo_world() call in CMakeLists.txt.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     gen_args = [
         '--bounds',

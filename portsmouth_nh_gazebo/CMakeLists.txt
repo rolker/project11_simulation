@@ -25,6 +25,8 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 # The world_name in the YAML config should use the area prefix
 # (e.g. portsmouth_nh_harbor) so that terrain model names are globally
 # unique (e.g. portsmouth_nh_harbor_terrain).
+set(BUILD_WORLD_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_world.py")
+
 function(add_gazebo_world WORLD_NAME WORLD_CONFIG)
   set(WORLD_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/worlds/${WORLD_NAME}")
   set(WORLD_SDF "${WORLD_OUTPUT_DIR}/${WORLD_NAME}.sdf")
@@ -32,10 +34,13 @@ function(add_gazebo_world WORLD_NAME WORLD_CONFIG)
   add_custom_command(
     OUTPUT "${WORLD_SDF}"
     COMMAND ${Python3_EXECUTABLE}
-      "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_world.py"
+      "${BUILD_WORLD_SCRIPT}"
       --config "${WORLD_CONFIG}"
       --output-dir "${WORLD_OUTPUT_DIR}"
-    DEPENDS "${WORLD_CONFIG}"
+      --expected-world-name "${WORLD_NAME}"
+    DEPENDS
+      "${WORLD_CONFIG}"
+      "${BUILD_WORLD_SCRIPT}"
     COMMENT "Generating ${WORLD_NAME} Gazebo world from chart data..."
   )
 
@@ -45,6 +50,13 @@ function(add_gazebo_world WORLD_NAME WORLD_CONFIG)
     DIRECTORY "${WORLD_OUTPUT_DIR}/"
     DESTINATION "share/${PROJECT_NAME}/worlds/${WORLD_NAME}"
   )
+
+  # Generate per-world env hook so Gazebo can resolve model:// URIs.
+  set(WORLD_DSV "${CMAKE_CURRENT_BINARY_DIR}/env-hooks/${WORLD_NAME}.dsv")
+  file(WRITE "${WORLD_DSV}"
+    "prepend-non-duplicate;GZ_SIM_RESOURCE_PATH;share/${PROJECT_NAME}/worlds/${WORLD_NAME}\n"
+  )
+  ament_environment_hooks("${WORLD_DSV}")
 endfunction()
 
 add_gazebo_world(portsmouth_nh_harbor
@@ -68,12 +80,6 @@ install(
 install(
   DIRECTORY config/
   DESTINATION "share/${PROJECT_NAME}/config"
-)
-
-# Environment hook: add all world directories to GZ_SIM_RESOURCE_PATH
-# so Gazebo can resolve model://<world_name>_terrain URIs.
-ament_environment_hooks(
-  "${CMAKE_CURRENT_SOURCE_DIR}/env-hooks/${PROJECT_NAME}.dsv.in"
 )
 
 # ---------- Test ----------
