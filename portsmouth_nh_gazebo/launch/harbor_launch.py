@@ -14,10 +14,44 @@
 
 """Launch Gazebo with the Portsmouth NH Harbor world."""
 
-from launch_common import make_gazebo_launch
+import os
+
+from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    OpaqueFunction,
+)
+from launch.substitutions import LaunchConfiguration
 
 WORLD_NAME = 'portsmouth_nh_harbor'
 
 
+def _launch_gazebo(context, *args, **kwargs):
+    verbose = LaunchConfiguration('verbose').perform(context) == 'true'
+    pkg_share = get_package_share_directory('portsmouth_nh_gazebo')
+    sdf_path = os.path.join(
+        pkg_share, 'worlds', WORLD_NAME, f'{WORLD_NAME}.sdf'
+    )
+    if not os.path.exists(sdf_path):
+        raise RuntimeError(
+            f'World SDF not found at {sdf_path}. '
+            'Rebuild: colcon build --packages-select portsmouth_nh_gazebo'
+        )
+    return [
+        ExecuteProcess(
+            cmd=['gz', 'sim', '-v4' if verbose else '-v1', sdf_path],
+            output='screen',
+        ),
+    ]
+
+
 def generate_launch_description():
-    return make_gazebo_launch(WORLD_NAME)
+    return LaunchDescription([
+        DeclareLaunchArgument(
+            'verbose', default_value='false',
+            description='Enable verbose Gazebo output',
+        ),
+        OpaqueFunction(function=_launch_gazebo),
+    ])
