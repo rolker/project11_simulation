@@ -20,30 +20,43 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 # ---------- World generation at build time ----------
 
-set(WORLD_NAME "portsmouth_harbor")
-set(WORLD_CONFIG "${CMAKE_CURRENT_SOURCE_DIR}/config/portsmouth.yaml")
-set(WORLD_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/worlds/${WORLD_NAME}")
-set(WORLD_SDF "${WORLD_OUTPUT_DIR}/${WORLD_NAME}.sdf")
+# add_gazebo_world(<world_name> <config_yaml>)
+# Generates a Gazebo world from chart/bathymetry data at build time.
+# The world_name in the YAML config should use the area prefix
+# (e.g. portsmouth_nh_harbor) so that terrain model names are globally
+# unique (e.g. portsmouth_nh_harbor_terrain).
+function(add_gazebo_world WORLD_NAME WORLD_CONFIG)
+  set(WORLD_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/worlds/${WORLD_NAME}")
+  set(WORLD_SDF "${WORLD_OUTPUT_DIR}/${WORLD_NAME}.sdf")
 
-add_custom_command(
-  OUTPUT "${WORLD_SDF}"
-  COMMAND ${Python3_EXECUTABLE}
-    "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_world.py"
-    --config "${WORLD_CONFIG}"
-    --output-dir "${WORLD_OUTPUT_DIR}"
-  DEPENDS "${WORLD_CONFIG}"
-  COMMENT "Generating ${WORLD_NAME} Gazebo world from chart data..."
-)
+  add_custom_command(
+    OUTPUT "${WORLD_SDF}"
+    COMMAND ${Python3_EXECUTABLE}
+      "${CMAKE_CURRENT_SOURCE_DIR}/scripts/build_world.py"
+      --config "${WORLD_CONFIG}"
+      --output-dir "${WORLD_OUTPUT_DIR}"
+    DEPENDS "${WORLD_CONFIG}"
+    COMMENT "Generating ${WORLD_NAME} Gazebo world from chart data..."
+  )
 
-add_custom_target(generate_world ALL DEPENDS "${WORLD_SDF}")
+  add_custom_target(generate_${WORLD_NAME} ALL DEPENDS "${WORLD_SDF}")
+
+  install(
+    DIRECTORY "${WORLD_OUTPUT_DIR}/"
+    DESTINATION "share/${PROJECT_NAME}/worlds/${WORLD_NAME}"
+  )
+endfunction()
+
+add_gazebo_world(portsmouth_nh_harbor
+  "${CMAKE_CURRENT_SOURCE_DIR}/config/portsmouth.yaml")
+
+add_gazebo_world(portsmouth_nh_isles_of_shoals
+  "${CMAKE_CURRENT_SOURCE_DIR}/config/isles_of_shoals.yaml")
+
+add_gazebo_world(portsmouth_nh_portsmouth_to_isles
+  "${CMAKE_CURRENT_SOURCE_DIR}/config/portsmouth_to_isles.yaml")
 
 # ---------- Install ----------
-
-# Generated world files (SDF, terrain model, textures)
-install(
-  DIRECTORY "${WORLD_OUTPUT_DIR}/"
-  DESTINATION "share/${PROJECT_NAME}/worlds/${WORLD_NAME}"
-)
 
 # Launch files
 install(
@@ -57,7 +70,8 @@ install(
   DESTINATION "share/${PROJECT_NAME}/config"
 )
 
-# Environment hook: prepend worlds dir to GZ_SIM_RESOURCE_PATH
+# Environment hook: add all world directories to GZ_SIM_RESOURCE_PATH
+# so Gazebo can resolve model://<world_name>_terrain URIs.
 ament_environment_hooks(
   "${CMAKE_CURRENT_SOURCE_DIR}/env-hooks/${PROJECT_NAME}.dsv.in"
 )

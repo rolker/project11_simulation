@@ -1,1 +1,3 @@
-prepend-non-duplicate;GZ_SIM_RESOURCE_PATH;share/portsmouth_nh_gazebo/worlds/portsmouth_harbor
+prepend-non-duplicate;GZ_SIM_RESOURCE_PATH;share/portsmouth_nh_gazebo/worlds/portsmouth_nh_harbor
+prepend-non-duplicate;GZ_SIM_RESOURCE_PATH;share/portsmouth_nh_gazebo/worlds/portsmouth_nh_isles_of_shoals
+prepend-non-duplicate;GZ_SIM_RESOURCE_PATH;share/portsmouth_nh_gazebo/worlds/portsmouth_nh_portsmouth_to_isles

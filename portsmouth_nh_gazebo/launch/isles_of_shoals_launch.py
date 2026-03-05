@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Launch Gazebo with the Portsmouth NH Harbor world."""
+"""Launch Gazebo with the Isles of Shoals world."""
 
 from launch_common import make_gazebo_launch
 
-WORLD_NAME = 'portsmouth_nh_harbor'
+WORLD_NAME = 'portsmouth_nh_isles_of_shoals'
 
 
 def generate_launch_description():

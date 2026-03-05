@@ -1,11 +1,11 @@
-# Portsmouth NH harbor region parameters
+# Isles of Shoals region parameters
 bounds:
-  south: 43.065
-  west: -70.72
-  north: 43.085
-  east: -70.70
+  south: 42.942
+  west: -70.665
+  north: 43.023
+  east: -70.565
 
-world_name: portsmouth_nh_harbor
+world_name: portsmouth_nh_isles_of_shoals
 
 # Heightmap grid: 2^grid_power + 1 (9 = 513x513)
 grid_power: 9
