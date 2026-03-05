@@ -20,10 +20,10 @@
         <scene>scene</scene>
         <ambient_light>0.4 0.4 0.4</ambient_light>
         <background_color>0.8 0.8 0.8</background_color>
-        <camera_pose>0 0 50 0 0.5 0</camera_pose>
+        <camera_pose>{camera_pose}</camera_pose>
         <camera_clip>
           <near>0.25</near>
-          <far>10000</far>
+          <far>{camera_far:.0f}</far>
         </camera_clip>
       </plugin>
 
@@ -215,7 +215,7 @@
 
     <!-- Generated terrain -->
     <include>
-      <uri>terrain</uri>
+      <uri>{terrain_model_name}</uri>
     </include>
 
     <!-- Water surface at z=0 -->

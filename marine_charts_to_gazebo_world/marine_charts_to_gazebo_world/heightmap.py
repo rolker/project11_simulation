@@ -24,6 +24,7 @@ def terrain_to_heightmap(
     terrain: np.ndarray,
     terrain_info: dict,
     output_dir: str,
+    model_name: str = "terrain",
 ) -> dict:
     """Convert a terrain elevation grid to a 16-bit PNG heightmap.
 
@@ -34,10 +35,13 @@ def terrain_to_heightmap(
         terrain: 2D numpy array of elevation (meters, positive up).
         terrain_info: dict from build_terrain() with size and range info.
         output_dir: Directory to write heightmap files into.
+        model_name: Gazebo model name for the terrain. Must be globally
+            unique across all worlds (e.g. 'portsmouth_nh_harbor_terrain').
 
     Returns:
         dict with keys needed for SDF generation:
             'heightmap_path': path to the PNG file
+            'model_name': the Gazebo model name used
             'size_x': terrain width in meters
             'size_y': terrain depth in meters
             'size_z': elevation range in meters
@@ -70,8 +74,8 @@ def terrain_to_heightmap(
         )
 
     # Create model directory directly under output_dir so Gazebo can find it
-    # via GZ_SIM_RESOURCE_PATH=<output_dir> as model://terrain
-    model_dir = os.path.join(output_dir, "terrain")
+    # via GZ_SIM_RESOURCE_PATH=<output_dir> as model://<model_name>
+    model_dir = os.path.join(output_dir, model_name)
     os.makedirs(model_dir, exist_ok=True)
 
     # Save heightmap PNG
@@ -83,11 +87,12 @@ def terrain_to_heightmap(
     _write_terrain_textures(model_dir, terrain_clean, terrain_info)
 
     # Write model.config
-    _write_model_config(model_dir)
+    _write_model_config(model_dir, model_name)
 
     # Write model.sdf
     heightmap_info = {
         "heightmap_path": heightmap_path,
+        "model_name": model_name,
         "size_x": terrain_info["size_x"],
         "size_y": terrain_info["size_y"],
         "size_z": elev_range,
@@ -147,12 +152,12 @@ def _write_terrain_textures(model_dir: str, terrain: np.ndarray,
     normal_img.save(os.path.join(textures_dir, "terrain_normal.png"))
 
 
-def _write_model_config(model_dir: str):
+def _write_model_config(model_dir: str, model_name: str):
     """Write a Gazebo model.config for the terrain model."""
-    config = """\
+    config = f"""\
 <?xml version="1.0"?>
 <model>
-  <name>terrain</name>
+  <name>{model_name}</name>
   <version>1.0</version>
   <sdf version="1.9">model.sdf</sdf>
   <description>Generated terrain heightmap from S57/bathymetry data</description>
@@ -169,10 +174,11 @@ def _write_model_sdf(model_dir: str, info: dict):
     # Sea level is at 0m, so offset from min = -min_elevation.
     blend_height = -info["pos_z"]
 
+    mn = info['model_name']
     sdf = f"""\
 <?xml version="1.0"?>
 <sdf version="1.9">
-  <model name="terrain">
+  <model name="{mn}">
     <static>true</static>
     <link name="link">
       <visual name="visual">
@@ -180,20 +186,20 @@ def _write_model_sdf(model_dir: str, info: dict):
           <heightmap>
             <use_terrain_paging>false</use_terrain_paging>
             <texture>
-              <diffuse>model://terrain/textures/seafloor_diffuse.png</diffuse>
-              <normal>model://terrain/textures/terrain_normal.png</normal>
+              <diffuse>model://{mn}/textures/seafloor_diffuse.png</diffuse>
+              <normal>model://{mn}/textures/terrain_normal.png</normal>
               <size>10</size>
             </texture>
             <texture>
-              <diffuse>model://terrain/textures/land_diffuse.png</diffuse>
-              <normal>model://terrain/textures/terrain_normal.png</normal>
+              <diffuse>model://{mn}/textures/land_diffuse.png</diffuse>
+              <normal>model://{mn}/textures/terrain_normal.png</normal>
               <size>10</size>
             </texture>
             <blend>
               <min_height>{blend_height:.1f}</min_height>
               <fade_dist>2</fade_dist>
             </blend>
-            <uri>model://terrain/heightmap.png</uri>
+            <uri>model://{mn}/heightmap.png</uri>
             <size>{info['size_x']:.1f} {info['size_y']:.1f} {info['size_z']:.1f}</size>
             <pos>0 0 {info['pos_z']:.1f}</pos>
           </heightmap>
@@ -202,7 +208,7 @@ def _write_model_sdf(model_dir: str, info: dict):
       <collision name="collision">
         <geometry>
           <heightmap>
-            <uri>model://terrain/heightmap.png</uri>
+            <uri>model://{mn}/heightmap.png</uri>
             <size>{info['size_x']:.1f} {info['size_y']:.1f} {info['size_z']:.1f}</size>
             <pos>0 0 {info['pos_z']:.1f}</pos>
           </heightmap>

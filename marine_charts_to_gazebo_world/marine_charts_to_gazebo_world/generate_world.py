@@ -71,6 +71,19 @@ def parse_args(argv=None):
         "--cache-dir",
         help="Directory to cache downloaded bathymetry data.",
     )
+    parser.add_argument(
+        "--camera-far-scale",
+        type=float,
+        default=None,
+        help="Far clipping plane as multiple of largest world dimension "
+        "(default: 20).",
+    )
+    parser.add_argument(
+        "--camera-direction",
+        default=None,
+        choices=["north", "south", "east", "west"],
+        help="Initial camera viewing direction (default: north).",
+    )
     return parser.parse_args(argv)
 
 
@@ -158,11 +171,21 @@ def main(argv=None):
     )
 
     # Step 4: Generate heightmap
-    print("Generating heightmap...")
-    heightmap_info = terrain_to_heightmap(terrain, terrain_info, args.output_dir)
+    terrain_model_name = f"{args.world_name}_terrain"
+    print(f"Generating heightmap (model: {terrain_model_name})...")
+    heightmap_info = terrain_to_heightmap(
+        terrain, terrain_info, args.output_dir,
+        model_name=terrain_model_name,
+    )
     print(f"  Heightmap saved to {heightmap_info['heightmap_path']}")
 
     # Step 5: Generate world SDF
+    camera_config = {}
+    if args.camera_far_scale is not None:
+        camera_config["far_scale"] = args.camera_far_scale
+    if args.camera_direction is not None:
+        camera_config["direction"] = args.camera_direction
+
     print("Generating world SDF...")
     sdf_path = generate_world_sdf(
         world_name=args.world_name,
@@ -170,6 +193,7 @@ def main(argv=None):
         center_lon=bbox.center_lon,
         output_dir=args.output_dir,
         heightmap_info=heightmap_info,
+        camera_config=camera_config or None,
     )
     print(f"  World SDF saved to {sdf_path}")
 

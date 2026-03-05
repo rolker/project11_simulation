@@ -1,11 +1,12 @@
-# Portsmouth NH harbor region parameters
+# Portsmouth Harbor to Isles of Shoals region parameters
+# Covers from Memorial Bridge south to the Isles of Shoals
 bounds:
-  south: 43.065
-  west: -70.72
+  south: 42.942
+  west: -70.76
   north: 43.085
-  east: -70.70
+  east: -70.565
 
-world_name: portsmouth_nh_harbor
+world_name: portsmouth_nh_portsmouth_to_isles
 
 # Heightmap grid: 2^grid_power + 1 (9 = 513x513)
 grid_power: 9
