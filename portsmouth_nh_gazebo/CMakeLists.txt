@@ -57,6 +57,13 @@ function(add_gazebo_world WORLD_NAME WORLD_CONFIG)
     "prepend-non-duplicate;GZ_SIM_RESOURCE_PATH;share/${PROJECT_NAME}/worlds/${WORLD_NAME}\n"
   )
   ament_environment_hooks("${WORLD_DSV}")
+
+  # Propagate the env-hook list to the parent scope so ament_package()
+  # (called at file scope) can see it.  ament_environment_hooks() uses
+  # PARENT_SCOPE which only reaches this function's scope; without the
+  # extra propagation the hooks are lost when the function returns.
+  set(_AMENT_CMAKE_ENVIRONMENT_HOOKS_dsv
+    "${_AMENT_CMAKE_ENVIRONMENT_HOOKS_dsv}" PARENT_SCOPE)
 endfunction()
 
 add_gazebo_world(portsmouth_nh_harbor

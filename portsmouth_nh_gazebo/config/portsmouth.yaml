@@ -1,33 +1,19 @@
-# Portsmouth NH harbor region with Isles of Shoals
-# Overall bounds define S57/OSM query area and water plane
+# ~3.3x3 km region around UNH pier (~43.076N, -70.710W)
 bounds:
-  south: 42.96
-  west: -70.76
-  north: 43.09
-  east: -70.59
+  south: 43.0625
+  west: -70.7299
+  north: 43.0895
+  east: -70.6894
 
 world_name: portsmouth_nh_harbor
 
-# Multi-tile terrain: each tile has its own resolution
-# Format: name, bounds (south,west,north,east), grid_power (2^N+1)
-tiles:
-  - name: harbor
-    south: 43.04
-    west: -70.76
-    north: 43.09
-    east: -70.59
-    grid_power: 10   # 1025x1025
+grid_power: 10   # 1025x1025 (~3.2 m/cell)
 
-  - name: ocean
-    south: 42.96
-    west: -70.76
-    north: 43.04
-    east: -70.59
-    grid_power: 9    # 513x513
-
-# Enrich S57 features with OpenStreetMap data (heights, materials, colours)
-osm: true
-
-# Optional: path to S57 ENC data directory.
-# Set ROS_S57_ENC_ROOT env var or override here.
-# enc_root: /path/to/ENC_ROOT
+skip_categories:
+  - buoys
+  - beacons
+  - piles
+  - mooring_facilities
+  - cranes
+  - pylons
+  - rip_rap
