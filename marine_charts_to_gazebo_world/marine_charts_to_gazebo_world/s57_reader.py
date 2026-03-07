@@ -174,6 +174,8 @@ class Light:
 
     lat: float
     lon: float
+    height: float = 0.0  # HEIGHT attribute (tower height in meters)
+    colour: int = 0  # COLOUR attribute (1=white, 3=red, 4=green, 6=yellow)
 
 
 @dataclass
@@ -694,6 +696,21 @@ def read_s57_file(filepath: str, bbox: BoundingBox) -> S57Features:
                             features.coastlines.append(clipped.Clone())
 
                     elif objl in (12, 73, 119):  # BUISGL, LNDMRK, SILTNK
+                        # Skip LNDMRK cemeteries (CATLND=2)
+                        if objl == 73:
+                            catlnd_idx = feature.GetFieldIndex("CATLND")
+                            if catlnd_idx >= 0:
+                                catlnd = feature.GetFieldAsInteger(
+                                    catlnd_idx
+                                )
+                                if catlnd == 2:
+                                    continue
+                        # Skip SILTNK that are actually sea areas
+                        if objl == 119:
+                            catsea_idx = feature.GetFieldIndex("CATSEA")
+                            if (catsea_idx >= 0
+                                    and feature.IsFieldSet(catsea_idx)):
+                                continue
                         clipped = _clip_geometry(geom, bbox)
                         if clipped is not None:
                             # Filter oversized LNDMRK/SILTNK polygons
@@ -810,8 +827,23 @@ def read_s57_file(filepath: str, bbox: BoundingBox) -> S57Features:
                     elif objl == 75:  # LIGHTS
                         pt = _extract_point(geom)
                         if pt is not None:
+                            height = 0.0
+                            height_idx = feature.GetFieldIndex("HEIGHT")
+                            if height_idx >= 0:
+                                height = feature.GetFieldAsDouble(
+                                    height_idx
+                                )
+                            colour = 0
+                            colour_idx = feature.GetFieldIndex("COLOUR")
+                            if colour_idx >= 0:
+                                colour = feature.GetFieldAsInteger(
+                                    colour_idx
+                                )
                             features.lights.append(
-                                Light(lat=pt[0], lon=pt[1])
+                                Light(
+                                    lat=pt[0], lon=pt[1],
+                                    height=height, colour=colour,
+                                )
                             )
 
                     elif objl == 122:  # SLCONS

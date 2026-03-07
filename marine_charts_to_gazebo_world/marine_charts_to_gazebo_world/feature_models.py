@@ -187,6 +187,7 @@ def _sample_terrain_elevation(lat, lon, terrain, bbox):
 def _polygon_to_polyline_model(
     name, geometry, center_lat, center_lon, height, z=0.0,
     ambient='0.6 0.6 0.55 1.0', diffuse='0.7 0.7 0.65 1.0',
+    collision=True,
 ):
     """Generate an SDF <model> with <polyline> extrusion for a polygon."""
     # Get the exterior ring of the polygon
@@ -244,20 +245,23 @@ def _polygon_to_polyline_model(
         f'            <diffuse>{diffuse}</diffuse>\n'
         f'          </material>\n'
         f'        </visual>\n'
-        f'        <collision name="collision">\n'
-        f'          <geometry>\n'
-        f'            <polyline>\n'
-        f'              <height>{height:.1f}</height>\n'
-        f'{points_str}\n'
-        f'            </polyline>\n'
-        f'          </geometry>\n'
-        f'        </collision>\n'
-        f'      </link>\n'
+        + (
+            f'        <collision name="collision">\n'
+            f'          <geometry>\n'
+            f'            <polyline>\n'
+            f'              <height>{height:.1f}</height>\n'
+            f'{points_str}\n'
+            f'            </polyline>\n'
+            f'          </geometry>\n'
+            f'        </collision>\n'
+            if collision else ''
+        )
+        + f'      </link>\n'
         f'    </model>'
     )
 
 
-def _buoy_model(name, x, y, colour_code):
+def _buoy_model(name, x, y, colour_code, collision=True):
     """Generate an SDF buoy model (cylinder body + cone top)."""
     r, g, b = _S57_COLOURS.get(colour_code, (1.0, 1.0, 0.0))
     return (
@@ -278,16 +282,19 @@ def _buoy_model(name, x, y, colour_code):
         f'            <diffuse>{r:.1f} {g:.1f} {b:.1f} 1.0</diffuse>\n'
         f'          </material>\n'
         f'        </visual>\n'
-        f'        <collision name="collision">\n'
-        f'          <pose>0 0 0.4 0 0 0</pose>\n'
-        f'          <geometry>\n'
-        f'            <cylinder>\n'
-        f'              <radius>0.4</radius>\n'
-        f'              <length>0.8</length>\n'
-        f'            </cylinder>\n'
-        f'          </geometry>\n'
-        f'        </collision>\n'
-        f'        <visual name="top">\n'
+        + (
+            f'        <collision name="collision">\n'
+            f'          <pose>0 0 0.4 0 0 0</pose>\n'
+            f'          <geometry>\n'
+            f'            <cylinder>\n'
+            f'              <radius>0.4</radius>\n'
+            f'              <length>0.8</length>\n'
+            f'            </cylinder>\n'
+            f'          </geometry>\n'
+            f'        </collision>\n'
+            if collision else ''
+        )
+        + f'        <visual name="top">\n'
         f'          <pose>0 0 1.0 0 0 0</pose>\n'
         f'          <geometry>\n'
         f'            <cone>\n'
@@ -305,7 +312,7 @@ def _buoy_model(name, x, y, colour_code):
     )
 
 
-def _beacon_model(name, x, y, z=0.0, colour_code=0):
+def _beacon_model(name, x, y, z=0.0, colour_code=0, collision=True):
     """Generate an SDF beacon model (tall cylinder with optional color)."""
     if colour_code and colour_code in _S57_COLOURS:
         r, g, b = _S57_COLOURS[colour_code]
@@ -332,33 +339,53 @@ def _beacon_model(name, x, y, z=0.0, colour_code=0):
         f'            <diffuse>{dif}</diffuse>\n'
         f'          </material>\n'
         f'        </visual>\n'
-        f'        <collision name="collision">\n'
-        f'          <pose>0 0 1.5 0 0 0</pose>\n'
-        f'          <geometry>\n'
-        f'            <cylinder>\n'
-        f'              <radius>0.15</radius>\n'
-        f'              <length>3.0</length>\n'
-        f'            </cylinder>\n'
-        f'          </geometry>\n'
-        f'        </collision>\n'
-        f'      </link>\n'
+        + (
+            f'        <collision name="collision">\n'
+            f'          <pose>0 0 1.5 0 0 0</pose>\n'
+            f'          <geometry>\n'
+            f'            <cylinder>\n'
+            f'              <radius>0.15</radius>\n'
+            f'              <length>3.0</length>\n'
+            f'            </cylinder>\n'
+            f'          </geometry>\n'
+            f'        </collision>\n'
+            if collision else ''
+        )
+        + f'      </link>\n'
         f'    </model>'
     )
 
 
-def _light_model(name, x, y, z=0.0):
-    """Generate an SDF light structure model (pole + yellow sphere on top)."""
+_LIGHT_DEFAULT_HEIGHT = 5.0
+
+# Map S57 COLOUR codes to lamp (ambient, diffuse) colors
+_LIGHT_COLOURS = {
+    1: ('1.0 1.0 1.0 1.0', '1.0 1.0 1.0 1.0'),    # white
+    3: ('1.0 0.2 0.2 1.0', '1.0 0.3 0.3 1.0'),    # red
+    4: ('0.2 1.0 0.2 1.0', '0.3 1.0 0.3 1.0'),    # green
+    6: ('1.0 1.0 0.0 1.0', '1.0 1.0 0.0 1.0'),    # yellow
+}
+_LIGHT_DEFAULT_COLOUR = ('1.0 1.0 0.0 1.0', '1.0 1.0 0.0 1.0')  # yellow
+
+
+def _light_model(name, x, y, z=0.0, tower_height=0.0, colour_code=0,
+                 collision=True):
+    """Generate an SDF light structure model (pole + colored sphere on top)."""
+    height = tower_height if tower_height > 0 else _LIGHT_DEFAULT_HEIGHT
+    pole_center = height / 2.0
+    lamp_z = height + 0.15
+    lamp_amb, lamp_dif = _LIGHT_COLOURS.get(colour_code, _LIGHT_DEFAULT_COLOUR)
     return (
         f'    <model name="{name}">\n'
         f'      <static>true</static>\n'
         f'      <pose>{x:.2f} {y:.2f} {z:.2f} 0 0 0</pose>\n'
         f'      <link name="link">\n'
         f'        <visual name="pole">\n'
-        f'          <pose>0 0 2.5 0 0 0</pose>\n'
+        f'          <pose>0 0 {pole_center:.2f} 0 0 0</pose>\n'
         f'          <geometry>\n'
         f'            <cylinder>\n'
         f'              <radius>0.1</radius>\n'
-        f'              <length>5.0</length>\n'
+        f'              <length>{height:.1f}</length>\n'
         f'            </cylinder>\n'
         f'          </geometry>\n'
         f'          <material>\n'
@@ -366,25 +393,28 @@ def _light_model(name, x, y, z=0.0):
         f'            <diffuse>0.4 0.4 0.4 1.0</diffuse>\n'
         f'          </material>\n'
         f'        </visual>\n'
-        f'        <collision name="collision">\n'
-        f'          <pose>0 0 2.5 0 0 0</pose>\n'
-        f'          <geometry>\n'
-        f'            <cylinder>\n'
-        f'              <radius>0.1</radius>\n'
-        f'              <length>5.0</length>\n'
-        f'            </cylinder>\n'
-        f'          </geometry>\n'
-        f'        </collision>\n'
-        f'        <visual name="lamp">\n'
-        f'          <pose>0 0 5.15 0 0 0</pose>\n'
+        + (
+            f'        <collision name="collision">\n'
+            f'          <pose>0 0 {pole_center:.2f} 0 0 0</pose>\n'
+            f'          <geometry>\n'
+            f'            <cylinder>\n'
+            f'              <radius>0.1</radius>\n'
+            f'              <length>{height:.1f}</length>\n'
+            f'            </cylinder>\n'
+            f'          </geometry>\n'
+            f'        </collision>\n'
+            if collision else ''
+        )
+        + f'        <visual name="lamp">\n'
+        f'          <pose>0 0 {lamp_z:.2f} 0 0 0</pose>\n'
         f'          <geometry>\n'
         f'            <sphere>\n'
         f'              <radius>0.15</radius>\n'
         f'            </sphere>\n'
         f'          </geometry>\n'
         f'          <material>\n'
-        f'            <ambient>1.0 1.0 0.0 1.0</ambient>\n'
-        f'            <diffuse>1.0 1.0 0.0 1.0</diffuse>\n'
+        f'            <ambient>{lamp_amb}</ambient>\n'
+        f'            <diffuse>{lamp_dif}</diffuse>\n'
         f'          </material>\n'
         f'        </visual>\n'
         f'      </link>\n'
@@ -453,21 +483,40 @@ def _coastline_wall_model(name, geometry, center_lat, center_lon, height=5.0,
 # SLCONS category-dependent rendering parameters
 _SLCONS_PARAMS = {
     # catslc: (height, wall_width, ambient, diffuse)
-    1:  (3.0, 1.0, '0.55 0.55 0.50 1.0', '0.65 0.65 0.60 1.0'),  # breakwater
-    2:  (1.5, 1.0, '0.55 0.55 0.50 1.0', '0.65 0.65 0.60 1.0'),  # groyne
-    4:  (2.0, 1.0, '0.50 0.45 0.40 1.0', '0.60 0.55 0.50 1.0'),  # pier/jetty
-    6:  (2.5, 1.0, '0.55 0.55 0.50 1.0', '0.65 0.65 0.60 1.0'),  # wharf/quay
-    8:  (1.0, 0.5, '0.50 0.50 0.45 1.0', '0.60 0.60 0.55 1.0'),  # rip rap
-    9:  (1.5, 0.5, '0.55 0.55 0.50 1.0', '0.65 0.65 0.60 1.0'),  # landing steps
-    10: (3.0, 1.0, '0.60 0.60 0.55 1.0', '0.70 0.70 0.65 1.0'),  # sea wall
+    1:  (3.0, 1.0, '0.6 0.6 0.6 1.0', '0.7 0.7 0.7 1.0'),      # breakwater — grey
+    2:  (1.5, 1.0, '0.2 0.5 0.2 1.0', '0.3 0.6 0.3 1.0'),      # groyne — green
+    4:  (2.0, 1.0, '0.6 0.45 0.2 1.0', '0.7 0.55 0.3 1.0'),    # pier/jetty — brown
+    6:  (2.5, 1.0, '0.2 0.3 0.7 1.0', '0.3 0.4 0.8 1.0'),      # wharf/quay — blue
+    8:  (1.0, 0.5, '0.5 0.5 0.45 1.0', '0.6 0.6 0.55 1.0'),    # rip rap — tan
+    9:  (1.5, 0.5, '0.7 0.7 0.2 1.0', '0.8 0.8 0.3 1.0'),      # landing steps — yellow
+    10: (3.0, 1.0, '0.7 0.2 0.2 1.0', '0.8 0.3 0.3 1.0'),      # sea wall — red
+    12: (1.0, 1.0, '0.5 0.2 0.6 1.0', '0.6 0.3 0.7 1.0'),      # ramp — purple
+    13: (1.0, 1.0, '0.2 0.6 0.6 1.0', '0.3 0.7 0.7 1.0'),      # slipway — cyan
+    14: (1.5, 0.5, '0.7 0.5 0.2 1.0', '0.8 0.6 0.3 1.0'),      # fender — orange
 }
 _SLCONS_DEFAULT = (2.0, 1.0, '0.55 0.55 0.50 1.0', '0.65 0.65 0.60 1.0')
+
+# Map CATSLC codes to skip-category names so individual SLCONS types
+# can be excluded via --skip-categories (e.g. "rip_rap,groynes").
+_CATSLC_SKIP_NAME = {
+    1: 'breakwaters',
+    2: 'groynes',
+    4: 'piers',
+    6: 'wharves',
+    8: 'rip_rap',
+    9: 'landing_steps',
+    10: 'sea_walls',
+    12: 'ramps',
+    13: 'slipways',
+    14: 'fenders',
+}
 
 
 def _slcons_wall_model(name, geometry, center_lat, center_lon,
                         height=2.0, wall_width=1.0, z=0.0,
                         ambient='0.55 0.55 0.50 1.0',
-                        diffuse='0.65 0.65 0.60 1.0'):
+                        diffuse='0.65 0.65 0.60 1.0',
+                        collision=True, seg_budget=None):
     """Generate SDF wall segments along a shoreline construction linestring."""
     geom_type = geometry.GetGeometryType() & 0xFF
     if geom_type == 2:  # wkbLineString
@@ -488,6 +537,8 @@ def _slcons_wall_model(name, geometry, center_lat, center_lon,
     segments = []
     seg_idx = 0
     for line in lines:
+        if seg_budget is not None and seg_idx >= seg_budget:
+            break
         # Handle MultiLineString sub-geometries
         if (line.GetGeometryType() & 0xFF) == 5:
             sub_lines = [line.GetGeometryRef(j)
@@ -495,8 +546,12 @@ def _slcons_wall_model(name, geometry, center_lat, center_lon,
         else:
             sub_lines = [line]
         for sline in sub_lines:
+            if seg_budget is not None and seg_idx >= seg_budget:
+                break
             n = sline.GetPointCount()
             for i in range(n - 1):
+                if seg_budget is not None and seg_idx >= seg_budget:
+                    break
                 lon0, lat0 = sline.GetX(i), sline.GetY(i)
                 lon1, lat1 = sline.GetX(i + 1), sline.GetY(i + 1)
                 x0, y0 = _latlon_to_enu(lat0, lon0, center_lat, center_lon)
@@ -526,23 +581,26 @@ def _slcons_wall_model(name, geometry, center_lat, center_lon,
                     f'            <diffuse>{diffuse}</diffuse>\n'
                     f'          </material>\n'
                     f'        </visual>\n'
-                    f'        <collision name="collision">\n'
-                    f'          <geometry>\n'
-                    f'            <box>\n'
-                    f'              <size>{length:.2f} {wall_width} '
-                    f'{height:.1f}</size>\n'
-                    f'            </box>\n'
-                    f'          </geometry>\n'
-                    f'        </collision>\n'
-                    f'      </link>\n'
+                    + (
+                        f'        <collision name="collision">\n'
+                        f'          <geometry>\n'
+                        f'            <box>\n'
+                        f'              <size>{length:.2f} {wall_width} '
+                        f'{height:.1f}</size>\n'
+                        f'            </box>\n'
+                        f'          </geometry>\n'
+                        f'        </collision>\n'
+                        if collision else ''
+                    )
+                    + f'      </link>\n'
                     f'    </model>'
                 )
                 seg_idx += 1
 
-    return '\n\n'.join(segments)
+    return '\n\n'.join(segments), seg_idx
 
 
-def _slcons_point_model(name, x, y, z=0.0):
+def _slcons_point_model(name, x, y, z=0.0, collision=True):
     """Generate an SDF model for a point SLCONS feature (small bollard)."""
     return (
         f'    <model name="{name}">\n'
@@ -562,21 +620,24 @@ def _slcons_point_model(name, x, y, z=0.0):
         f'            <diffuse>0.65 0.65 0.60 1.0</diffuse>\n'
         f'          </material>\n'
         f'        </visual>\n'
-        f'        <collision name="collision">\n'
-        f'          <pose>0 0 0.5 0 0 0</pose>\n'
-        f'          <geometry>\n'
-        f'            <cylinder>\n'
-        f'              <radius>0.3</radius>\n'
-        f'              <length>1.0</length>\n'
-        f'            </cylinder>\n'
-        f'          </geometry>\n'
-        f'        </collision>\n'
-        f'      </link>\n'
+        + (
+            f'        <collision name="collision">\n'
+            f'          <pose>0 0 0.5 0 0 0</pose>\n'
+            f'          <geometry>\n'
+            f'            <cylinder>\n'
+            f'              <radius>0.3</radius>\n'
+            f'              <length>1.0</length>\n'
+            f'            </cylinder>\n'
+            f'          </geometry>\n'
+            f'        </collision>\n'
+            if collision else ''
+        )
+        + f'      </link>\n'
         f'    </model>'
     )
 
 
-def _pile_model(name, x, y):
+def _pile_model(name, x, y, collision=True):
     """Generate an SDF pile model (thin cylinder at water level)."""
     return (
         f'    <model name="{name}">\n'
@@ -596,24 +657,27 @@ def _pile_model(name, x, y):
         f'            <diffuse>0.55 0.50 0.45 1.0</diffuse>\n'
         f'          </material>\n'
         f'        </visual>\n'
-        f'        <collision name="collision">\n'
-        f'          <pose>0 0 1.5 0 0 0</pose>\n'
-        f'          <geometry>\n'
-        f'            <cylinder>\n'
-        f'              <radius>0.15</radius>\n'
-        f'              <length>3.0</length>\n'
-        f'            </cylinder>\n'
-        f'          </geometry>\n'
-        f'        </collision>\n'
-        f'      </link>\n'
+        + (
+            f'        <collision name="collision">\n'
+            f'          <pose>0 0 1.5 0 0 0</pose>\n'
+            f'          <geometry>\n'
+            f'            <cylinder>\n'
+            f'              <radius>0.15</radius>\n'
+            f'              <length>3.0</length>\n'
+            f'            </cylinder>\n'
+            f'          </geometry>\n'
+            f'        </collision>\n'
+            if collision else ''
+        )
+        + f'      </link>\n'
         f'    </model>'
     )
 
 
-def _morfac_model(name, x, y, z, catmor):
+def _morfac_model(name, x, y, z, catmor, collision=True):
     """Generate an SDF mooring facility model based on category."""
     if catmor == 7:  # mooring buoy
-        return _buoy_model(name, x, y, colour_code=6)  # yellow
+        return _buoy_model(name, x, y, colour_code=6, collision=collision)
     elif catmor in (1, 2):  # dolphin
         return (
             f'    <model name="{name}">\n'
@@ -633,16 +697,19 @@ def _morfac_model(name, x, y, z, catmor):
             f'            <diffuse>0.60 0.50 0.40 1.0</diffuse>\n'
             f'          </material>\n'
             f'        </visual>\n'
-            f'        <collision name="collision">\n'
-            f'          <pose>0 0 1.0 0 0 0</pose>\n'
-            f'          <geometry>\n'
-            f'            <cylinder>\n'
-            f'              <radius>0.3</radius>\n'
-            f'              <length>2.0</length>\n'
-            f'            </cylinder>\n'
-            f'          </geometry>\n'
-            f'        </collision>\n'
-            f'      </link>\n'
+            + (
+                f'        <collision name="collision">\n'
+                f'          <pose>0 0 1.0 0 0 0</pose>\n'
+                f'          <geometry>\n'
+                f'            <cylinder>\n'
+                f'              <radius>0.3</radius>\n'
+                f'              <length>2.0</length>\n'
+                f'            </cylinder>\n'
+                f'          </geometry>\n'
+                f'        </collision>\n'
+                if collision else ''
+            )
+            + f'      </link>\n'
             f'    </model>'
         )
     elif catmor == 3:  # bollard
@@ -664,20 +731,23 @@ def _morfac_model(name, x, y, z, catmor):
             f'            <diffuse>0.4 0.4 0.4 1.0</diffuse>\n'
             f'          </material>\n'
             f'        </visual>\n'
-            f'        <collision name="collision">\n'
-            f'          <pose>0 0 0.25 0 0 0</pose>\n'
-            f'          <geometry>\n'
-            f'            <cylinder>\n'
-            f'              <radius>0.2</radius>\n'
-            f'              <length>0.5</length>\n'
-            f'            </cylinder>\n'
-            f'          </geometry>\n'
-            f'        </collision>\n'
-            f'      </link>\n'
+            + (
+                f'        <collision name="collision">\n'
+                f'          <pose>0 0 0.25 0 0 0</pose>\n'
+                f'          <geometry>\n'
+                f'            <cylinder>\n'
+                f'              <radius>0.2</radius>\n'
+                f'              <length>0.5</length>\n'
+                f'            </cylinder>\n'
+                f'          </geometry>\n'
+                f'        </collision>\n'
+                if collision else ''
+            )
+            + f'      </link>\n'
             f'    </model>'
         )
     elif catmor == 5:  # post
-        return _pile_model(name, x, y)
+        return _pile_model(name, x, y, collision=collision)
     else:  # generic
         return (
             f'    <model name="{name}">\n'
@@ -697,21 +767,24 @@ def _morfac_model(name, x, y, z, catmor):
             f'            <diffuse>0.55 0.50 0.45 1.0</diffuse>\n'
             f'          </material>\n'
             f'        </visual>\n'
-            f'        <collision name="collision">\n'
-            f'          <pose>0 0 1.0 0 0 0</pose>\n'
-            f'          <geometry>\n'
-            f'            <cylinder>\n'
-            f'              <radius>0.25</radius>\n'
-            f'              <length>2.0</length>\n'
-            f'            </cylinder>\n'
-            f'          </geometry>\n'
-            f'        </collision>\n'
-            f'      </link>\n'
+            + (
+                f'        <collision name="collision">\n'
+                f'          <pose>0 0 1.0 0 0 0</pose>\n'
+                f'          <geometry>\n'
+                f'            <cylinder>\n'
+                f'              <radius>0.25</radius>\n'
+                f'              <length>2.0</length>\n'
+                f'            </cylinder>\n'
+                f'          </geometry>\n'
+                f'        </collision>\n'
+                if collision else ''
+            )
+            + f'      </link>\n'
             f'    </model>'
         )
 
 
-def _crane_model(name, x, y, z, catcrn, height):
+def _crane_model(name, x, y, z, catcrn, height, collision=True):
     """Generate an SDF crane model (tall box, industrial yellow)."""
     h = height if height > 0 else 20.0
     return (
@@ -731,20 +804,23 @@ def _crane_model(name, x, y, z, catcrn, height):
         f'            <diffuse>0.9 0.8 0.2 1.0</diffuse>\n'
         f'          </material>\n'
         f'        </visual>\n'
-        f'        <collision name="collision">\n'
-        f'          <pose>0 0 {h / 2:.2f} 0 0 0</pose>\n'
-        f'          <geometry>\n'
-        f'            <box>\n'
-        f'              <size>3.0 3.0 {h:.1f}</size>\n'
-        f'            </box>\n'
-        f'          </geometry>\n'
-        f'        </collision>\n'
-        f'      </link>\n'
+        + (
+            f'        <collision name="collision">\n'
+            f'          <pose>0 0 {h / 2:.2f} 0 0 0</pose>\n'
+            f'          <geometry>\n'
+            f'            <box>\n'
+            f'              <size>3.0 3.0 {h:.1f}</size>\n'
+            f'            </box>\n'
+            f'          </geometry>\n'
+            f'        </collision>\n'
+            if collision else ''
+        )
+        + f'      </link>\n'
         f'    </model>'
     )
 
 
-def _pylon_model(name, x, y, z, height):
+def _pylon_model(name, x, y, z, height, collision=True):
     """Generate an SDF pylon model (thick gray cylinder)."""
     h = height if height > 0 else 15.0
     return (
@@ -765,16 +841,19 @@ def _pylon_model(name, x, y, z, height):
         f'            <diffuse>0.65 0.65 0.65 1.0</diffuse>\n'
         f'          </material>\n'
         f'        </visual>\n'
-        f'        <collision name="collision">\n'
-        f'          <pose>0 0 {h / 2:.2f} 0 0 0</pose>\n'
-        f'          <geometry>\n'
-        f'            <cylinder>\n'
-        f'              <radius>1.0</radius>\n'
-        f'              <length>{h:.1f}</length>\n'
-        f'            </cylinder>\n'
-        f'          </geometry>\n'
-        f'        </collision>\n'
-        f'      </link>\n'
+        + (
+            f'        <collision name="collision">\n'
+            f'          <pose>0 0 {h / 2:.2f} 0 0 0</pose>\n'
+            f'          <geometry>\n'
+            f'            <cylinder>\n'
+            f'              <radius>1.0</radius>\n'
+            f'              <length>{h:.1f}</length>\n'
+            f'            </cylinder>\n'
+            f'          </geometry>\n'
+            f'        </collision>\n'
+            if collision else ''
+        )
+        + f'      </link>\n'
         f'    </model>'
     )
 
@@ -782,6 +861,8 @@ def _pylon_model(name, x, y, z, height):
 def generate_feature_models(
     features, center_lat, center_lon,
     terrain=None, bbox=None, debug=False,
+    skip_categories=None, simplify_tolerance=0.0,
+    max_wall_segments=None,
 ):
     """Convert S57 features to SDF <model> XML strings.
 
@@ -793,15 +874,27 @@ def generate_feature_models(
         bbox: Optional BoundingBox for terrain sampling.
         debug: If True, polygon features use thin (0.2m) extrusions with
             distinct colors per type for footprint visualization.
+        skip_categories: Optional set of category names to skip (e.g.
+            {'buildings', 'slcons', 'buoys'}).
+        simplify_tolerance: Geometry simplification tolerance in degrees.
+            Applied to polygon and linestring features before model
+            generation.  0 disables simplification.
 
     Returns:
         String of SDF <model> elements ready to insert into a world template.
         Empty string if no features to generate.
     """
     models = []
+    skip = skip_categories or set()
+
+    # Land features omit collision geometry — they exist for visual context
+    # only and don't need physics interaction with vessels.
+    _LAND = False
 
     # Buildings (BUISGL, LNDMRK, SILTNK)
-    for i, building in enumerate(features.buildings):
+    for i, building in enumerate(
+        features.buildings if 'buildings' not in skip else []
+    ):
         centroid = building.geometry.Centroid()
         z = _sample_terrain_elevation(
             centroid.GetY(), centroid.GetX(), terrain, bbox
@@ -832,13 +925,15 @@ def generate_feature_models(
         model = _polygon_to_polyline_model(
             name, building.geometry,
             center_lat, center_lon, height, z=z,
-            ambient=amb, diffuse=dif,
+            ambient=amb, diffuse=dif, collision=_LAND,
         )
         if model:
             models.append(model)
 
     # Pontoons (water surface, z=0)
-    for i, pontoon in enumerate(features.pontoons):
+    for i, pontoon in enumerate(
+        features.pontoons if 'pontoons' not in skip else []
+    ):
         if debug:
             height = 0.2
             amb, dif = _DEBUG_COLORS['pontoon']
@@ -846,16 +941,29 @@ def generate_feature_models(
             height = _PONTOON_HEIGHT
             amb = '0.4 0.35 0.3 1.0'
             dif = '0.5 0.45 0.4 1.0'
-        model = _polygon_to_polyline_model(
-            f'pontoon_{i:04d}', pontoon.geometry,
-            center_lat, center_lon, height, z=0.0,
-            ambient=amb, diffuse=dif,
-        )
-        if model:
-            models.append(model)
+        geom_type = pontoon.geometry.GetGeometryType() & 0xFF
+        if geom_type in (3, 6):  # Polygon, MultiPolygon
+            model = _polygon_to_polyline_model(
+                f'pontoon_{i:04d}', pontoon.geometry,
+                center_lat, center_lon, height, z=0.0,
+                ambient=amb, diffuse=dif,
+            )
+            if model:
+                models.append(model)
+        elif geom_type in (2, 5, 7):  # LineString, Multi, Collection
+            wall, _ = _slcons_wall_model(
+                f'pontoon_{i:04d}', pontoon.geometry,
+                center_lat, center_lon,
+                height=height, wall_width=1.0,
+                ambient=amb, diffuse=dif,
+            )
+            if wall:
+                models.append(wall)
 
     # Bridges (deck at clearance height, not extruded from 0)
-    for i, bridge in enumerate(features.bridges):
+    for i, bridge in enumerate(
+        features.bridges if 'bridges' not in skip else []
+    ):
         clearance = (bridge.clearance if bridge.clearance > 0
                      else _BRIDGE_DEFAULT_HEIGHT)
         if debug:
@@ -865,21 +973,36 @@ def generate_feature_models(
             height = 1.0  # deck thickness
             amb = '0.5 0.5 0.5 1.0'
             dif = '0.6 0.6 0.6 1.0'
-        model = _polygon_to_polyline_model(
-            f'bridge_{i:04d}', bridge.geometry,
-            center_lat, center_lon, height, z=clearance,
-            ambient=amb, diffuse=dif,
-        )
-        if model:
-            models.append(model)
+        geom_type = bridge.geometry.GetGeometryType() & 0xFF
+        if geom_type in (3, 6):  # Polygon, MultiPolygon
+            model = _polygon_to_polyline_model(
+                f'bridge_{i:04d}', bridge.geometry,
+                center_lat, center_lon, height, z=clearance,
+                ambient=amb, diffuse=dif,
+            )
+            if model:
+                models.append(model)
+        elif geom_type in (2, 5, 7):  # LineString, Multi, Collection
+            wall, _ = _slcons_wall_model(
+                f'bridge_{i:04d}', bridge.geometry,
+                center_lat, center_lon,
+                height=height, wall_width=4.0, z=clearance,
+                ambient=amb, diffuse=dif,
+            )
+            if wall:
+                models.append(wall)
 
     # Buoys (water surface, z=0)
-    for i, buoy in enumerate(features.buoys):
+    for i, buoy in enumerate(
+        features.buoys if 'buoys' not in skip else []
+    ):
         x, y = _latlon_to_enu(buoy.lat, buoy.lon, center_lat, center_lon)
         models.append(_buoy_model(f'buoy_{i:04d}', x, y, buoy.colour))
 
     # Beacons (on terrain)
-    for i, beacon in enumerate(features.beacons):
+    for i, beacon in enumerate(
+        features.beacons if 'beacons' not in skip else []
+    ):
         x, y = _latlon_to_enu(
             beacon.lat, beacon.lon, center_lat, center_lon
         )
@@ -888,37 +1011,56 @@ def generate_feature_models(
         )
         models.append(_beacon_model(
             f'beacon_{i:04d}', x, y, z=z, colour_code=beacon.colour,
+            collision=_LAND,
         ))
 
     # Lights (on terrain)
-    for i, light in enumerate(features.lights):
+    for i, light in enumerate(
+        features.lights if 'lights' not in skip else []
+    ):
         x, y = _latlon_to_enu(
             light.lat, light.lon, center_lat, center_lon
         )
         z = _sample_terrain_elevation(
             light.lat, light.lon, terrain, bbox
         )
-        models.append(_light_model(f'light_{i:04d}', x, y, z=z))
+        models.append(_light_model(f'light_{i:04d}', x, y, z=z,
+                                   tower_height=light.height,
+                                   colour_code=light.colour,
+                                   collision=_LAND))
 
     # Shore constructions (SLCONS): line, polygon, and point geometry
-    for i, sc in enumerate(features.shore_constructions):
+    wall_seg_remaining = max_wall_segments
+    for i, sc in enumerate(
+        features.shore_constructions if 'shore_constructions' not in skip
+        else []
+    ):
+        if wall_seg_remaining is not None and wall_seg_remaining <= 0:
+            break
+        # Allow skipping individual SLCONS sub-types (e.g. "rip_rap")
+        catslc_skip = _CATSLC_SKIP_NAME.get(sc.catslc)
+        if catslc_skip and catslc_skip in skip:
+            continue
         geom_type = sc.geometry.GetGeometryType() & 0xFF
         params = _SLCONS_PARAMS.get(sc.catslc, _SLCONS_DEFAULT)
         height, wall_width, amb, dif = params
         if geom_type in (2, 5, 7):  # LineString, MultiLineString, Collection
-            wall = _slcons_wall_model(
+            wall, n_segs = _slcons_wall_model(
                 f'slcons_{i:04d}', sc.geometry,
                 center_lat, center_lon,
                 height=height, wall_width=wall_width,
-                ambient=amb, diffuse=dif,
+                ambient=amb, diffuse=dif, collision=_LAND,
+                seg_budget=wall_seg_remaining,
             )
             if wall:
                 models.append(wall)
+            if wall_seg_remaining is not None:
+                wall_seg_remaining -= n_segs
         elif geom_type in (3, 6):  # Polygon, MultiPolygon
             model = _polygon_to_polyline_model(
                 f'slcons_{i:04d}', sc.geometry,
                 center_lat, center_lon, height, z=0.0,
-                ambient=amb, diffuse=dif,
+                ambient=amb, diffuse=dif, collision=_LAND,
             )
             if model:
                 models.append(model)
@@ -927,43 +1069,57 @@ def generate_feature_models(
                 sc.geometry.GetY(), sc.geometry.GetX(),
                 center_lat, center_lon,
             )
-            models.append(_slcons_point_model(f'slcons_{i:04d}', x, y))
+            models.append(_slcons_point_model(f'slcons_{i:04d}', x, y,
+                                               collision=_LAND))
 
     # Piles (at water level)
-    for i, pile in enumerate(features.piles):
+    for i, pile in enumerate(
+        features.piles if 'piles' not in skip else []
+    ):
         x, y = _latlon_to_enu(pile.lat, pile.lon, center_lat, center_lon)
         models.append(_pile_model(f'pile_{i:04d}', x, y))
 
     # Mooring facilities
-    for i, mf in enumerate(features.mooring_facilities):
+    for i, mf in enumerate(
+        features.mooring_facilities if 'mooring_facilities' not in skip
+        else []
+    ):
         x, y = _latlon_to_enu(mf.lat, mf.lon, center_lat, center_lon)
         z = _sample_terrain_elevation(mf.lat, mf.lon, terrain, bbox)
-        models.append(_morfac_model(f'morfac_{i:04d}', x, y, z, mf.catmor))
+        models.append(_morfac_model(f'morfac_{i:04d}', x, y, z, mf.catmor,
+                                    collision=_LAND))
 
     # Cranes (on terrain)
-    for i, crane in enumerate(features.cranes):
+    for i, crane in enumerate(
+        features.cranes if 'cranes' not in skip else []
+    ):
         x, y = _latlon_to_enu(
             crane.lat, crane.lon, center_lat, center_lon
         )
         z = _sample_terrain_elevation(crane.lat, crane.lon, terrain, bbox)
         models.append(_crane_model(
             f'crane_{i:04d}', x, y, z, crane.catcrn, crane.height,
+            collision=_LAND,
         ))
 
     # Pylons (on terrain)
-    for i, pylon in enumerate(features.pylons):
+    for i, pylon in enumerate(
+        features.pylons if 'pylons' not in skip else []
+    ):
         x, y = _latlon_to_enu(
             pylon.lat, pylon.lon, center_lat, center_lon
         )
         z = _sample_terrain_elevation(pylon.lat, pylon.lon, terrain, bbox)
         models.append(_pylon_model(
             f'pylon_{i:04d}', x, y, z, pylon.height,
+            collision=_LAND,
         ))
 
     # Debug: coastline walls (simplified to reduce segment count)
     if debug and features.coastlines:
         for i, coastline in enumerate(features.coastlines):
-            simplified = coastline.Simplify(0.0002)  # ~20m tolerance
+            tol = simplify_tolerance if simplify_tolerance > 0 else 0.0002
+            simplified = coastline.Simplify(tol)
             wall = _coastline_wall_model(
                 f'coastline_{i:04d}', simplified,
                 center_lat, center_lon,

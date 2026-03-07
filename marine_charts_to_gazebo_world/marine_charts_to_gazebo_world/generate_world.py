@@ -171,6 +171,28 @@ def parse_args(argv=None):
         help="Enrich S57 buildings with OpenStreetMap data (heights, "
         "materials, colours) via the Overpass API.",
     )
+    parser.add_argument(
+        "--skip-categories",
+        help="Comma-separated list of feature categories to skip. "
+        "Valid categories: buildings, pontoons, bridges, buoys, beacons, "
+        "lights, shore_constructions, piles, mooring_facilities, cranes, "
+        "pylons.",
+    )
+    parser.add_argument(
+        "--simplify-tolerance",
+        type=float,
+        default=None,
+        help="Geometry simplification tolerance in degrees. "
+        "If not set, derived from the world bounding box "
+        "(~1m resolution for the smaller dimension).",
+    )
+    parser.add_argument(
+        "--max-wall-segments",
+        type=int,
+        default=None,
+        help="Maximum number of wall segments for shore constructions. "
+        "Limits the total SLCONS segment count across all features.",
+    )
     return parser.parse_args(argv)
 
 
@@ -347,11 +369,26 @@ def main(argv=None):
 
     # Step 5: Generate feature models (optional)
     feature_sdf = ""
+    skip_categories = set()
+    if args.skip_categories:
+        skip_categories = {c.strip() for c in args.skip_categories.split(',')}
+
+    # Compute simplification tolerance from world scale if not specified.
+    # Default: ~1m expressed in degrees (via the smaller bbox dimension).
+    if args.simplify_tolerance is not None:
+        simplify_tol = args.simplify_tolerance
+    else:
+        min_span = min(bbox.north - bbox.south, bbox.east - bbox.west)
+        simplify_tol = min_span / 10000.0  # ~1m for typical coastal regions
+
     if not args.no_features and s57_features is not None:
         print("Generating S57 feature models...")
         feature_sdf = generate_feature_models(
             s57_features, bbox.center_lat, bbox.center_lon,
             terrain=first_terrain, bbox=bbox, debug=args.debug_features,
+            skip_categories=skip_categories,
+            simplify_tolerance=simplify_tol,
+            max_wall_segments=args.max_wall_segments,
         )
         if feature_sdf:
             n_models = feature_sdf.count("<model name=")

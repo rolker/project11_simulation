@@ -142,6 +142,27 @@ def main():
     if config.get('fetch_etopo'):
         gen_args.append('--fetch-etopo')
 
+    # Feature category filtering (optional)
+    skip = config.get('skip_categories')
+    if skip:
+        if isinstance(skip, list):
+            skip = ','.join(skip)
+        gen_args.extend(['--skip-categories', skip])
+
+    # Disable all features (optional)
+    if config.get('no_features'):
+        gen_args.append('--no-features')
+
+    # Geometry simplification tolerance (optional)
+    simplify = config.get('simplify_tolerance')
+    if simplify is not None:
+        gen_args.extend(['--simplify-tolerance', str(simplify)])
+
+    # Wall segment budget (optional)
+    max_segs = config.get('max_wall_segments')
+    if max_segs is not None:
+        gen_args.extend(['--max-wall-segments', str(max_segs)])
+
     # ENC root: config override takes precedence, then env var
     enc_root = config.get('enc_root') or os.environ.get('ROS_S57_ENC_ROOT')
     if enc_root:
