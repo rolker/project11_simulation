@@ -166,7 +166,15 @@ def parse_args(argv=None):
         "--osm",
         action="store_true",
         help="Enrich S57 buildings with OpenStreetMap data (heights, "
-        "materials, colours) via the Overpass API.",
+        "materials, colours) and rasterize terrain textures via the "
+        "Overpass API.",
+    )
+    parser.add_argument(
+        "--no-osm-buildings",
+        action="store_true",
+        help="When used with --osm, skip adding unmatched OSM-only "
+        "buildings. Only enrich existing S57 buildings and generate "
+        "terrain textures.",
     )
     parser.add_argument(
         "--skip-categories",
@@ -332,6 +340,7 @@ def main(argv=None):
             if s57_features is not None:
                 s57_features, n_matched, n_added = match_and_enrich(
                     s57_features, osm_features,
+                    add_unmatched=not args.no_osm_buildings,
                 )
                 print(f"  Matched {n_matched} S57 buildings with OSM data")
                 print(f"  Added {n_added} OSM-only buildings")

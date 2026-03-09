@@ -64,6 +64,7 @@ def _iou(geom_a: ogr.Geometry, geom_b: ogr.Geometry) -> float:
 def match_and_enrich(
     s57_features: S57Features,
     osm_features: OsmFeatures,
+    add_unmatched: bool = True,
 ) -> tuple:
     """Match S57 buildings to OSM buildings and enrich with OSM data.
 
@@ -71,12 +72,16 @@ def match_and_enrich(
     and IoU. When matched, copies OSM height, material, and colour onto
     the S57 Building dataclass, and replaces the footprint polygon.
 
-    Unmatched OSM buildings are converted to S57 Building objects and
-    appended to the buildings list.
+    When *add_unmatched* is True (the default), unmatched OSM buildings
+    are converted to S57 Building objects and appended to the buildings
+    list.
 
     Args:
         s57_features: S57Features with buildings to enrich.
         osm_features: OsmFeatures with OSM buildings to match against.
+        add_unmatched: If True, add unmatched OSM buildings as new
+            S57 Building objects. Set False to only enrich existing
+            S57 buildings without adding new ones.
 
     Returns:
         Tuple of (enriched S57Features, number of matched buildings,
@@ -133,6 +138,8 @@ def match_and_enrich(
 
     # Add unmatched OSM buildings as new Building objects
     n_added = 0
+    if not add_unmatched:
+        return s57_features, n_matched, n_added
     for idx, osm_building in enumerate(osm_features.buildings):
         if idx in matched_osm_indices:
             continue

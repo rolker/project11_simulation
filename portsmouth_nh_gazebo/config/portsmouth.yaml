@@ -9,6 +9,9 @@ world_name: portsmouth_nh_harbor
 
 grid_power: 10   # 1025x1025 (~3.2 m/cell)
 
+osm: true
+no_osm_buildings: true
+
 skip_categories:
   - buoys
   - beacons
