@@ -63,6 +63,8 @@ class TestBuildTerrainWithBase:
 
         terrain, info = build_terrain(
             bbox=bbox,
+            ref_lat=bbox.center_lat,
+            ref_lon=bbox.center_lon,
             base_elevation=base,
             base_geotransform=gt,
             grid_size=17,
@@ -77,6 +79,8 @@ class TestBuildTerrainWithBase:
 
         terrain, info = build_terrain(
             bbox=bbox,
+            ref_lat=bbox.center_lat,
+            ref_lon=bbox.center_lon,
             base_elevation=base,
             base_geotransform=gt,
             grid_size=5,
@@ -99,6 +103,8 @@ class TestBuildTerrainWithBase:
 
         terrain, info = build_terrain(
             bbox=bbox,
+            ref_lat=bbox.center_lat,
+            ref_lon=bbox.center_lon,
             base_elevation=base,
             base_geotransform=gt,
             s57_features=features,
@@ -133,7 +139,12 @@ class TestBuildS57Terrain:
     def test_no_features_flat(self):
         """No S57 features should produce a flat surface at 0."""
         bbox = BoundingBox(south=43.0, west=-71.0, north=43.01, east=-70.99)
-        terrain, info = build_terrain(bbox=bbox, grid_size=9)
+        terrain, info = build_terrain(
+            bbox=bbox,
+            ref_lat=bbox.center_lat,
+            ref_lon=bbox.center_lon,
+            grid_size=9,
+        )
         assert terrain.shape == (9, 9)
         assert np.all(terrain == 0.0)
 
@@ -149,7 +160,11 @@ class TestBuildS57Terrain:
         ])
         features = S57Features(land_areas=[land_poly])
         terrain, info = build_terrain(
-            bbox=bbox, s57_features=features, grid_size=33,
+            bbox=bbox,
+            ref_lat=bbox.center_lat,
+            ref_lon=bbox.center_lon,
+            s57_features=features,
+            grid_size=33,
         )
         assert terrain.shape == (33, 33)
         # Land cells should have positive elevation
@@ -169,7 +184,11 @@ class TestBuildS57Terrain:
         ])
         features = S57Features(land_areas=[land_poly])
         terrain, info = build_terrain(
-            bbox=bbox, s57_features=features, grid_size=65,
+            bbox=bbox,
+            ref_lat=bbox.center_lat,
+            ref_lon=bbox.center_lon,
+            s57_features=features,
+            grid_size=65,
         )
         # Interior land cells far from shore should reach 5.0m cap
         assert info["max_elevation"] == pytest.approx(5.0)
@@ -194,7 +213,11 @@ class TestBuildS57Terrain:
             land_areas=[land_poly], soundings=soundings,
         )
         terrain, info = build_terrain(
-            bbox=bbox, s57_features=features, grid_size=33,
+            bbox=bbox,
+            ref_lat=bbox.center_lat,
+            ref_lon=bbox.center_lon,
+            s57_features=features,
+            grid_size=33,
         )
         # Should have both positive (land) and negative (water) elevation
         assert info["max_elevation"] > 0.0
@@ -209,7 +232,11 @@ class TestBuildS57Terrain:
         ])
         features = S57Features(coastlines=[coastline])
         terrain, info = build_terrain(
-            bbox=bbox, s57_features=features, grid_size=33,
+            bbox=bbox,
+            ref_lat=bbox.center_lat,
+            ref_lon=bbox.center_lon,
+            s57_features=features,
+            grid_size=33,
         )
         # Coastline pixels should have non-negative elevation
         assert info["max_elevation"] >= 0.0
@@ -244,10 +271,14 @@ class TestDepthAreaClamping:
             depth_areas=[depth_area], soundings=soundings,
         )
         terrain, info = build_terrain(
-            bbox=bbox, s57_features=features, grid_size=33,
+            bbox=bbox,
+            ref_lat=bbox.center_lat,
+            ref_lon=bbox.center_lon,
+            s57_features=features,
+            grid_size=33,
         )
         # All cells should be clamped to DEPARE range:
-        # depths 3-8m → elevation -8 to -3
+        # depths 3-8m -> elevation -8 to -3
         water_cells = terrain[terrain < 0]
         assert len(water_cells) > 0, "Should have water cells"
         assert np.min(water_cells) >= -8.0 - 0.01
@@ -290,7 +321,11 @@ class TestDepthAreaClamping:
             depth_areas=[coarse_da, detail_da], soundings=soundings,
         )
         terrain, info = build_terrain(
-            bbox=bbox, s57_features=features, grid_size=33,
+            bbox=bbox,
+            ref_lat=bbox.center_lat,
+            ref_lon=bbox.center_lon,
+            s57_features=features,
+            grid_size=33,
         )
         # Center of grid (within detailed chart area) should use 8-12m range
         center = terrain[16, 16]

@@ -22,25 +22,25 @@ from osgeo import gdal, ogr, osr
 from scipy.interpolate import LinearNDInterpolator
 from scipy.ndimage import distance_transform_edt
 
+from .coordinates import (
+    enu_to_latlon_array,
+    latlon_to_enu,
+    latlon_to_enu_array,
+    transform_geometries_to_enu,
+)
 from .s57_reader import BoundingBox, DepthArea, S57Features
 
 logger = logging.getLogger(__name__)
-
-# WGS84 meters per degree (approximate, varies with latitude)
-_METERS_PER_DEG_LAT = 111_320.0
 
 # Shoreline ramp parameters
 _RAMP_DISTANCE_M = 25.0  # distance over which land ramps up
 _RAMP_MAX_ELEVATION = 5.0  # maximum land elevation in meters
 
 
-def _meters_per_deg_lon(lat_deg: float) -> float:
-    """Approximate meters per degree of longitude at a given latitude."""
-    return _METERS_PER_DEG_LAT * np.cos(np.radians(lat_deg))
-
-
 def build_terrain(
     bbox: BoundingBox,
+    ref_lat: float,
+    ref_lon: float,
     base_elevation: Optional[np.ndarray] = None,
     base_geotransform: Optional[tuple] = None,
     s57_features: Optional[S57Features] = None,
@@ -48,13 +48,14 @@ def build_terrain(
 ) -> Tuple[np.ndarray, dict]:
     """Build a terrain grid by combining base elevation with S57 data.
 
-    The output grid is in a local ENU frame centered on the bbox center.
-    If base_elevation is None, terrain is built from S57 land areas and
-    soundings: land cells get a synthetic ramp from the shoreline, water
-    cells get interpolated sounding depths.
+    The output grid is in a local ENU frame centered on (ref_lat, ref_lon).
+    Grid coordinates are built in ENU meters using ECEF-based transforms,
+    ensuring alignment with 3D feature placement.
 
     Args:
         bbox: Geographic bounding box.
+        ref_lat: Reference latitude for ENU origin (degrees).
+        ref_lon: Reference longitude for ENU origin (degrees).
         base_elevation: Optional 2D array of elevation from ETOPO/GEBCO
             (meters, positive up). If None, uses S57-only terrain with
             shoreline ramp.
@@ -70,33 +71,37 @@ def build_terrain(
         terrain_info: dict with 'size_x', 'size_y', 'min_elevation',
             'max_elevation', 'center_lat', 'center_lon'.
     """
-    center_lat = bbox.center_lat
-    center_lon = bbox.center_lon
-    m_per_deg_lon = _meters_per_deg_lon(center_lat)
+    # Compute ENU corners for the bounding box
+    e_sw, n_sw = latlon_to_enu(bbox.south, bbox.west, ref_lat, ref_lon)
+    e_ne, n_ne = latlon_to_enu(bbox.north, bbox.east, ref_lat, ref_lon)
 
-    # Compute physical extent in meters
-    size_x = (bbox.east - bbox.west) * m_per_deg_lon
-    size_y = (bbox.north - bbox.south) * _METERS_PER_DEG_LAT
+    size_x = e_ne - e_sw
+    size_y = n_ne - n_sw
 
-    # Build output grid coordinates in degrees
-    lons = np.linspace(bbox.west, bbox.east, grid_size)
-    lats = np.linspace(bbox.north, bbox.south, grid_size)  # north-up
-    grid_lons, grid_lats = np.meshgrid(lons, lats)
+    # Build output grid in ENU meters (north-up: row 0 = north)
+    east_1d = np.linspace(e_sw, e_ne, grid_size)
+    north_1d = np.linspace(n_ne, n_sw, grid_size)  # north-up
+    grid_east, grid_north = np.meshgrid(east_1d, north_1d)
 
     if base_elevation is not None and base_geotransform is not None:
-        # Sample base elevation onto output grid using bilinear interpolation
+        # Convert ENU grid points back to lat/lon for ETOPO sampling
+        grid_lats, grid_lons = enu_to_latlon_array(
+            grid_east, grid_north, ref_lat, ref_lon,
+        )
         terrain = _sample_raster(
             base_elevation, base_geotransform, grid_lons, grid_lats
         )
         # Overlay S57 soundings if available
         if s57_features is not None and s57_features.soundings:
             terrain = _overlay_soundings(
-                terrain, grid_lons, grid_lats, s57_features, bbox
+                terrain, grid_east, grid_north,
+                s57_features, ref_lat, ref_lon,
             )
     else:
         # S57-only terrain: land ramp + sounding interpolation
         terrain = _build_s57_terrain(
-            grid_lons, grid_lats, s57_features, grid_size, bbox
+            grid_east, grid_north, s57_features, grid_size,
+            size_x, size_y, ref_lat, ref_lon,
         )
 
     terrain_info = {
@@ -104,8 +109,8 @@ def build_terrain(
         "size_y": size_y,
         "min_elevation": float(np.nanmin(terrain)),
         "max_elevation": float(np.nanmax(terrain)),
-        "center_lat": center_lat,
-        "center_lon": center_lon,
+        "center_lat": ref_lat,
+        "center_lon": ref_lon,
         "grid_size": grid_size,
     }
 
@@ -113,11 +118,14 @@ def build_terrain(
 
 
 def _build_s57_terrain(
-    grid_lons: np.ndarray,
-    grid_lats: np.ndarray,
+    grid_east: np.ndarray,
+    grid_north: np.ndarray,
     s57_features: Optional[S57Features],
     grid_size: int,
-    bbox: BoundingBox,
+    size_x: float,
+    size_y: float,
+    ref_lat: float,
+    ref_lon: float,
 ) -> np.ndarray:
     """Build terrain from S57 land areas and soundings.
 
@@ -128,28 +136,29 @@ def _build_s57_terrain(
     if s57_features is None:
         return np.zeros((grid_size, grid_size), dtype=np.float64)
 
+    # ENU grid extents
+    min_east = grid_east[0, 0]
+    max_east = grid_east[0, -1]
+    max_north = grid_north[0, 0]
+    min_north = grid_north[-1, 0]
+
     # Rasterize land areas and coastlines onto a binary mask
     land_mask = _rasterize_land(
         s57_features.land_areas, s57_features.coastlines,
-        bbox, grid_size,
+        grid_size, min_east, max_east, min_north, max_north,
+        ref_lat, ref_lon,
     )
 
-    # Compute distance from shore for land cells
-    center_lat = bbox.center_lat
-    m_per_deg_lon = _meters_per_deg_lon(center_lat)
+    # Cell sizes in meters (exact from ENU grid)
+    cell_size_x = size_x / (grid_size - 1)
+    cell_size_y = size_y / (grid_size - 1)
 
-    # Cell sizes in meters (anisotropic)
-    cell_size_y = (bbox.north - bbox.south) / (grid_size - 1) * _METERS_PER_DEG_LAT
-    cell_size_x = (bbox.east - bbox.west) / (grid_size - 1) * m_per_deg_lon
-
-    # Distance transform on inverted mask (distance from water/shore into land)
-    # Invert: water=1 (background), land=0 (features we measure distance from edge of)
-    water_mask = ~land_mask
+    # Distance transform on land mask (distance from water/shore into land)
     distance_cells = distance_transform_edt(
         land_mask, sampling=[cell_size_y, cell_size_x]
     )
 
-    # Ramp land elevation: linear 0→5m over 25m, capped at 5m
+    # Ramp land elevation: linear 0->5m over 25m, capped at 5m
     land_elevation = np.minimum(
         distance_cells / _RAMP_DISTANCE_M * _RAMP_MAX_ELEVATION,
         _RAMP_MAX_ELEVATION,
@@ -157,13 +166,15 @@ def _build_s57_terrain(
 
     # Start with water depths from soundings
     water_terrain = _synthesize_from_s57(
-        grid_lons, grid_lats, s57_features, grid_size
+        grid_east, grid_north, s57_features, grid_size, ref_lat, ref_lon,
     )
 
     # Clamp interpolated depths to depth area ranges
     if s57_features.depth_areas:
         da_min, da_max = _rasterize_depth_areas(
-            s57_features.depth_areas, bbox, grid_size,
+            s57_features.depth_areas, grid_size,
+            min_east, max_east, min_north, max_north,
+            ref_lat, ref_lon,
         )
         da_mask = ~np.isnan(da_min)
         if np.any(da_mask):
@@ -180,67 +191,69 @@ def _build_s57_terrain(
 
 
 def _rasterize_land(
-    land_areas, coastlines, bbox: BoundingBox, grid_size: int,
+    land_areas, coastlines, grid_size: int,
+    min_east: float, max_east: float,
+    min_north: float, max_north: float,
+    ref_lat: float, ref_lon: float,
 ) -> np.ndarray:
     """Rasterize LNDARE polygons and COALNE lines onto a binary grid.
+
+    Geometries are transformed from WGS84 to ENU before rasterization.
 
     Returns a boolean mask where True = land.
     """
     if not land_areas and not coastlines:
         return np.zeros((grid_size, grid_size), dtype=bool)
 
-    # Create in-memory OGR dataset with all land geometries
+    # GeoTransform in ENU meters (no CRS needed)
+    pixel_width = (max_east - min_east) / grid_size
+    pixel_height = (max_north - min_north) / grid_size
+    gt = (min_east, pixel_width, 0.0, max_north, 0.0, -pixel_height)
+
+    # Transform and rasterize land area polygons
     mem_driver = ogr.GetDriverByName('Memory')
     mem_ds = mem_driver.CreateDataSource('land')
-    srs = osr.SpatialReference()
-    srs.ImportFromEPSG(4326)
-    mem_layer = mem_ds.CreateLayer('land', srs, ogr.wkbPolygon)
+    mem_layer = mem_ds.CreateLayer('land', None, ogr.wkbPolygon)
 
-    # Add land area polygons
-    for geom in land_areas:
-        feat = ogr.Feature(mem_layer.GetLayerDefn())
-        feat.SetGeometry(geom)
-        mem_layer.CreateFeature(feat)
+    if land_areas:
+        enu_land = transform_geometries_to_enu(
+            land_areas, ref_lat, ref_lon,
+        )
+        for geom in enu_land:
+            feat = ogr.Feature(mem_layer.GetLayerDefn())
+            feat.SetGeometry(geom)
+            mem_layer.CreateFeature(feat)
 
-    # Rasterize using GDAL
-    # GeoTransform: (west, pixel_width, 0, north, 0, -pixel_height)
-    pixel_width = (bbox.east - bbox.west) / grid_size
-    pixel_height = (bbox.north - bbox.south) / grid_size
-    gt = (bbox.west, pixel_width, 0.0, bbox.north, 0.0, -pixel_height)
-
-    # Create in-memory raster
     rast_driver = gdal.GetDriverByName('MEM')
     rast_ds = rast_driver.Create('', grid_size, grid_size, 1, gdal.GDT_Byte)
     rast_ds.SetGeoTransform(gt)
-    rast_ds.SetProjection(srs.ExportToWkt())
     band = rast_ds.GetRasterBand(1)
     band.Fill(0)
 
-    # Rasterize polygons — burn value 1 for land
     gdal.RasterizeLayer(rast_ds, [1], mem_layer, burn_values=[1])
-
-    # Read result
     land_mask = band.ReadAsArray().astype(bool)
 
     # Also rasterize coastlines as land boundary pixels
     if coastlines:
-        line_layer = mem_ds.CreateLayer('coast', srs, ogr.wkbLineString)
-        for geom in coastlines:
+        enu_coastlines = transform_geometries_to_enu(
+            coastlines, ref_lat, ref_lon,
+        )
+        line_layer = mem_ds.CreateLayer('coast', None, ogr.wkbLineString)
+        for geom in enu_coastlines:
             feat = ogr.Feature(line_layer.GetLayerDefn())
             feat.SetGeometry(geom)
             line_layer.CreateFeature(feat)
 
-        # Burn coastline pixels onto the same mask
-        coast_ds = rast_driver.Create('', grid_size, grid_size, 1, gdal.GDT_Byte)
+        coast_ds = rast_driver.Create(
+            '', grid_size, grid_size, 1, gdal.GDT_Byte,
+        )
         coast_ds.SetGeoTransform(gt)
-        coast_ds.SetProjection(srs.ExportToWkt())
         coast_band = coast_ds.GetRasterBand(1)
         coast_band.Fill(0)
         gdal.RasterizeLayer(coast_ds, [1], line_layer, burn_values=[1])
         coast_mask = coast_band.ReadAsArray().astype(bool)
         land_mask |= coast_mask
 
-    # Clean up
     mem_ds = None
     rast_ds = None
 
@@ -248,7 +261,10 @@ def _rasterize_land(
 
 
 def _rasterize_depth_areas(
-    depth_areas: list, bbox: BoundingBox, grid_size: int,
+    depth_areas: list, grid_size: int,
+    min_east: float, max_east: float,
+    min_north: float, max_north: float,
+    ref_lat: float, ref_lon: float,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Rasterize depth areas with scale ordering onto min/max depth grids.
 
@@ -270,28 +286,30 @@ def _rasterize_depth_areas(
         depth_areas, key=lambda da: da.compilation_scale, reverse=True,
     )
 
-    # GeoTransform matching _rasterize_land
-    pixel_width = (bbox.east - bbox.west) / grid_size
-    pixel_height = (bbox.north - bbox.south) / grid_size
-    gt = (bbox.west, pixel_width, 0.0, bbox.north, 0.0, -pixel_height)
+    # GeoTransform in ENU meters
+    pixel_width = (max_east - min_east) / grid_size
+    pixel_height = (max_north - min_north) / grid_size
+    gt = (min_east, pixel_width, 0.0, max_north, 0.0, -pixel_height)
 
-    srs = osr.SpatialReference()
-    srs.ImportFromEPSG(4326)
-    wkt = srs.ExportToWkt()
     rast_driver = gdal.GetDriverByName('MEM')
 
     for da in sorted_areas:
-        # Rasterize this polygon to a mask
+        # Transform geometry to ENU
+        enu_geom = transform_geometries_to_enu(
+            [da.geometry], ref_lat, ref_lon,
+        )[0]
+
         mem_driver = ogr.GetDriverByName('Memory')
         mem_ds = mem_driver.CreateDataSource('da')
-        mem_layer = mem_ds.CreateLayer('da', srs, ogr.wkbPolygon)
+        mem_layer = mem_ds.CreateLayer('da', None, ogr.wkbPolygon)
         feat = ogr.Feature(mem_layer.GetLayerDefn())
-        feat.SetGeometry(da.geometry)
+        feat.SetGeometry(enu_geom)
         mem_layer.CreateFeature(feat)
 
-        rast_ds = rast_driver.Create('', grid_size, grid_size, 1, gdal.GDT_Byte)
+        rast_ds = rast_driver.Create(
+            '', grid_size, grid_size, 1, gdal.GDT_Byte,
+        )
         rast_ds.SetGeoTransform(gt)
-        rast_ds.SetProjection(wkt)
         band = rast_ds.GetRasterBand(1)
         band.Fill(0)
         gdal.RasterizeLayer(rast_ds, [1], mem_layer, burn_values=[1])
@@ -307,41 +325,46 @@ def _rasterize_depth_areas(
 
 
 def _synthesize_from_s57(
-    grid_lons: np.ndarray,
-    grid_lats: np.ndarray,
+    grid_east: np.ndarray,
+    grid_north: np.ndarray,
     s57_features: Optional[S57Features],
     grid_size: int,
+    ref_lat: float,
+    ref_lon: float,
 ) -> np.ndarray:
     """Synthesize terrain from S57 sounding and depth area data.
 
     When no base raster is available, we interpolate a surface directly
-    from S57 soundings. If no soundings exist either, returns a flat
-    surface at 0m elevation.
+    from S57 soundings in ENU space. If no soundings exist either,
+    returns a flat surface at 0m elevation.
     """
     if s57_features is None or not s57_features.soundings:
         return np.zeros((grid_size, grid_size), dtype=np.float64)
 
-    # Build interpolation from all soundings
-    snd_lons = np.array([s.lon for s in s57_features.soundings])
+    # Convert soundings to ENU
     snd_lats = np.array([s.lat for s in s57_features.soundings])
+    snd_lons = np.array([s.lon for s in s57_features.soundings])
     snd_elevations = np.array([-s.depth for s in s57_features.soundings])
+    snd_east, snd_north = latlon_to_enu_array(
+        snd_lats, snd_lons, ref_lat, ref_lon,
+    )
 
     try:
         interp = LinearNDInterpolator(
-            np.column_stack([snd_lons, snd_lats]),
+            np.column_stack([snd_east, snd_north]),
             snd_elevations,
         )
-        terrain = interp(grid_lons, grid_lats)
+        terrain = interp(grid_east, grid_north)
         # Fill NaN (outside convex hull of soundings) with nearest value
         from scipy.interpolate import NearestNDInterpolator
         nan_mask = np.isnan(terrain)
         if np.any(nan_mask):
             nearest = NearestNDInterpolator(
-                np.column_stack([snd_lons, snd_lats]),
+                np.column_stack([snd_east, snd_north]),
                 snd_elevations,
             )
             terrain[nan_mask] = nearest(
-                grid_lons[nan_mask], grid_lats[nan_mask]
+                grid_east[nan_mask], grid_north[nan_mask]
             )
         return terrain
     except Exception:
@@ -361,8 +384,6 @@ def _sample_raster(
     """Bilinear interpolation of raster data at query lat/lon points."""
     gt = geotransform
     # Convert geographic coords to pixel coords
-    # pixel_x = (lon - gt[0]) / gt[1]
-    # pixel_y = (lat - gt[3]) / gt[5]
     pixel_x = (query_lons - gt[0]) / gt[1]
     pixel_y = (query_lats - gt[3]) / gt[5]
 
@@ -392,10 +413,11 @@ def _sample_raster(
 
 def _overlay_soundings(
     terrain: np.ndarray,
-    grid_lons: np.ndarray,
-    grid_lats: np.ndarray,
+    grid_east: np.ndarray,
+    grid_north: np.ndarray,
     s57_features: S57Features,
-    bbox: BoundingBox,
+    ref_lat: float,
+    ref_lon: float,
 ) -> np.ndarray:
     """Refine terrain using S57 sounding data.
 
@@ -406,25 +428,27 @@ def _overlay_soundings(
     if not s57_features.soundings:
         return terrain
 
-    # Collect sounding points
-    snd_lons = np.array([s.lon for s in s57_features.soundings])
+    # Convert soundings to ENU
     snd_lats = np.array([s.lat for s in s57_features.soundings])
-    # S57 depths are positive down; convert to elevation (positive up)
+    snd_lons = np.array([s.lon for s in s57_features.soundings])
     snd_elevations = np.array([-s.depth for s in s57_features.soundings])
+    snd_east, snd_north = latlon_to_enu_array(
+        snd_lats, snd_lons, ref_lat, ref_lon,
+    )
 
     # Sample base elevation at sounding locations
-    # (we'd need the base raster for this, but we can approximate by
-    # interpolating the already-sampled terrain grid)
     from scipy.interpolate import RegularGridInterpolator
 
-    lats_1d = grid_lats[:, 0]  # north to south
-    lons_1d = grid_lons[0, :]  # west to east
+    north_1d = grid_north[:, 0]  # north to south
+    east_1d = grid_east[0, :]    # west to east
 
     base_interp = RegularGridInterpolator(
-        (lats_1d, lons_1d), terrain,
+        (north_1d, east_1d), terrain,
         method="linear", bounds_error=False, fill_value=None
     )
-    base_at_soundings = base_interp(np.column_stack([snd_lats, snd_lons]))
+    base_at_soundings = base_interp(
+        np.column_stack([snd_north, snd_east])
+    )
 
     # Compute corrections (sounding truth minus base estimate)
     corrections = snd_elevations - base_at_soundings
@@ -434,17 +458,17 @@ def _overlay_soundings(
     if not np.any(significant):
         return terrain
 
-    sig_lons = snd_lons[significant]
-    sig_lats = snd_lats[significant]
+    sig_east = snd_east[significant]
+    sig_north = snd_north[significant]
     sig_corrections = corrections[significant]
 
     # Interpolate corrections onto the grid
     try:
         correction_interp = LinearNDInterpolator(
-            np.column_stack([sig_lons, sig_lats]),
+            np.column_stack([sig_east, sig_north]),
             sig_corrections,
         )
-        correction_grid = correction_interp(grid_lons, grid_lats)
+        correction_grid = correction_interp(grid_east, grid_north)
         # Only apply where interpolation succeeded (not NaN)
         valid = ~np.isnan(correction_grid)
         terrain[valid] += correction_grid[valid]

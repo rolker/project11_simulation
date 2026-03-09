@@ -19,8 +19,8 @@ import xml.etree.ElementTree as ET
 import pytest
 from osgeo import ogr
 
+from marine_charts_to_gazebo_world.coordinates import latlon_to_enu
 from marine_charts_to_gazebo_world.feature_models import (
-    _latlon_to_enu,
     _sanitize_objnam,
     generate_feature_models,
 )
@@ -53,13 +53,13 @@ class TestLatLonToEnu:
 
     def test_center_is_origin(self):
         """World center should map to (0, 0)."""
-        x, y = _latlon_to_enu(CENTER_LAT, CENTER_LON, CENTER_LAT, CENTER_LON)
+        x, y = latlon_to_enu(CENTER_LAT, CENTER_LON, CENTER_LAT, CENTER_LON)
         assert x == pytest.approx(0.0)
         assert y == pytest.approx(0.0)
 
     def test_north_offset(self):
         """Point north of center should have positive y offset."""
-        x, y = _latlon_to_enu(
+        x, y = latlon_to_enu(
             CENTER_LAT + 0.001, CENTER_LON, CENTER_LAT, CENTER_LON
         )
         assert x == pytest.approx(0.0, abs=0.01)
@@ -68,7 +68,7 @@ class TestLatLonToEnu:
 
     def test_east_offset(self):
         """Point east of center should have positive x offset."""
-        x, y = _latlon_to_enu(
+        x, y = latlon_to_enu(
             CENTER_LAT, CENTER_LON + 0.001, CENTER_LAT, CENTER_LON
         )
         assert y == pytest.approx(0.0, abs=0.01)
