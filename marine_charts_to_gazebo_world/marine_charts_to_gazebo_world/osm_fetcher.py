@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Fetch OpenStreetMap building data via the Overpass API."""
+"""Fetch OpenStreetMap building and terrain feature data via the Overpass API."""
 
 import hashlib
 import json
@@ -52,26 +52,77 @@ class OsmBuilding:
 
 
 @dataclass
+class OsmLanduse:
+    """A landuse polygon from OpenStreetMap."""
+
+    geometry: ogr.Geometry  # Polygon in WGS84
+    landuse: str = ''  # e.g. residential, commercial, grass, forest
+
+
+@dataclass
+class OsmRoad:
+    """A road linestring from OpenStreetMap."""
+
+    geometry: ogr.Geometry  # LineString in WGS84
+    highway: str = ''  # e.g. secondary, residential, service, footway
+
+
+@dataclass
+class OsmParking:
+    """A parking area polygon from OpenStreetMap."""
+
+    geometry: ogr.Geometry  # Polygon in WGS84
+
+
+@dataclass
+class OsmNatural:
+    """A natural area polygon from OpenStreetMap."""
+
+    geometry: ogr.Geometry  # Polygon in WGS84
+    natural: str = ''  # e.g. wood, wetland, beach, scrub
+
+
+@dataclass
 class OsmFeatures:
     """Collection of features fetched from OpenStreetMap."""
 
     buildings: List[OsmBuilding] = field(default_factory=list)
+    landuse: List[OsmLanduse] = field(default_factory=list)
+    roads: List[OsmRoad] = field(default_factory=list)
+    parking: List[OsmParking] = field(default_factory=list)
+    natural: List[OsmNatural] = field(default_factory=list)
 
 
-def _cache_key(bbox: BoundingBox) -> str:
+def _cache_key(bbox: BoundingBox, terrain: bool = False) -> str:
     """Generate a deterministic cache key from bbox."""
-    s = f"osm:{bbox.south:.6f},{bbox.west:.6f},{bbox.north:.6f},{bbox.east:.6f}"
+    prefix = "osm_terrain" if terrain else "osm"
+    s = f"{prefix}:{bbox.south:.6f},{bbox.west:.6f},{bbox.north:.6f},{bbox.east:.6f}"
     return hashlib.md5(s.encode()).hexdigest()
 
 
-def _build_overpass_query(bbox: BoundingBox) -> str:
-    """Build Overpass QL query for buildings in the bounding box."""
+def _build_overpass_query(bbox: BoundingBox,
+                          fetch_terrain_features: bool = False) -> str:
+    """Build Overpass QL query for buildings (and terrain features) in bbox."""
     b = f"{bbox.south},{bbox.west},{bbox.north},{bbox.east}"
+    if not fetch_terrain_features:
+        return (
+            "[out:json][timeout:120];\n"
+            "(\n"
+            f'  way["building"]({b});\n'
+            f'  relation["building"]({b});\n'
+            ");\n"
+            "out geom;\n"
+        )
+    # Combined query: buildings + landuse + roads + parking + natural
     return (
         "[out:json][timeout:120];\n"
         "(\n"
         f'  way["building"]({b});\n'
         f'  relation["building"]({b});\n'
+        f'  way["landuse"]({b});\n'
+        f'  way["highway"]({b});\n'
+        f'  way["amenity"="parking"]({b});\n'
+        f'  way["natural"]({b});\n'
         ");\n"
         "out geom;\n"
     )
@@ -161,32 +212,96 @@ def _parse_element(element: dict) -> Optional[OsmBuilding]:
     )
 
 
+def _coords_to_linestring(coords: list) -> Optional[ogr.Geometry]:
+    """Convert a list of {'lat': ..., 'lon': ...} dicts to an OGR LineString.
+
+    Returns None if fewer than 2 points.
+    """
+    if len(coords) < 2:
+        return None
+    line = ogr.Geometry(ogr.wkbLineString)
+    for pt in coords:
+        line.AddPoint(pt["lon"], pt["lat"])
+    return line
+
+
+def _parse_terrain_element(element: dict, features: OsmFeatures):
+    """Parse a terrain-related element (landuse, road, parking, natural)."""
+    tags = element.get("tags", {})
+    geom_coords = element.get("geometry")
+    if not geom_coords:
+        return
+
+    # Landuse polygons
+    if "landuse" in tags and "building" not in tags:
+        polygon = _coords_to_polygon(geom_coords)
+        if polygon is not None and polygon.IsValid():
+            features.landuse.append(OsmLanduse(
+                geometry=polygon,
+                landuse=tags.get("landuse", ""),
+            ))
+        return
+
+    # Roads (linestrings)
+    if "highway" in tags:
+        linestring = _coords_to_linestring(geom_coords)
+        if linestring is not None:
+            features.roads.append(OsmRoad(
+                geometry=linestring,
+                highway=tags.get("highway", ""),
+            ))
+        return
+
+    # Parking areas
+    if tags.get("amenity") == "parking":
+        polygon = _coords_to_polygon(geom_coords)
+        if polygon is not None and polygon.IsValid():
+            features.parking.append(OsmParking(geometry=polygon))
+        return
+
+    # Natural areas
+    if "natural" in tags and "building" not in tags:
+        polygon = _coords_to_polygon(geom_coords)
+        if polygon is not None and polygon.IsValid():
+            features.natural.append(OsmNatural(
+                geometry=polygon,
+                natural=tags.get("natural", ""),
+            ))
+        return
+
+
 def fetch_osm_features(
     bbox: BoundingBox,
     cache_dir: Optional[str] = None,
+    fetch_terrain_features: bool = False,
 ) -> OsmFeatures:
-    """Fetch OSM building features for a bounding box via Overpass API.
+    """Fetch OSM features for a bounding box via Overpass API.
 
     Args:
         bbox: Geographic bounding box in WGS84 degrees.
         cache_dir: Directory to cache downloaded data. Defaults to
             ~/.cache/marine_charts_to_gazebo_world/.
+        fetch_terrain_features: If True, also fetch landuse, roads,
+            parking, and natural areas for terrain texturing.
 
     Returns:
-        OsmFeatures with parsed buildings.
+        OsmFeatures with parsed buildings (and terrain features if requested).
     """
     if cache_dir is None:
         cache_dir = _DEFAULT_CACHE_DIR
     os.makedirs(cache_dir, exist_ok=True)
 
-    cache_file = os.path.join(cache_dir, f"osm_{_cache_key(bbox)}.json")
+    cache_file = os.path.join(
+        cache_dir,
+        f"osm_{_cache_key(bbox, terrain=fetch_terrain_features)}.json",
+    )
 
     if os.path.exists(cache_file):
         logger.info("Using cached OSM data: %s", cache_file)
         with open(cache_file) as f:
             data = json.load(f)
     else:
-        query = _build_overpass_query(bbox)
+        query = _build_overpass_query(bbox, fetch_terrain_features)
         logger.info("Querying Overpass API...")
         response = requests.get(
             _OVERPASS_URL,
@@ -218,5 +333,7 @@ def fetch_osm_features(
         building = _parse_element(element)
         if building is not None:
             features.buildings.append(building)
+        if fetch_terrain_features:
+            _parse_terrain_element(element, features)
 
     return features

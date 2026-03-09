@@ -26,6 +26,7 @@ from .feature_models import generate_feature_models
 from .heightmap import terrain_to_heightmap
 from .osm_fetcher import fetch_osm_features
 from .osm_matcher import match_and_enrich
+from .osm_texture import rasterize_osm_texture
 from .s57_reader import BoundingBox, read_enc_directory
 from .terrain import build_terrain
 from .world_builder import generate_world_sdf
@@ -193,7 +194,8 @@ def parse_args(argv=None):
 
 
 def _build_single_tile(args, bbox, grid_size, s57_features,
-                       ref_lat, ref_lon, model_name="terrain"):
+                       ref_lat, ref_lon, model_name="terrain",
+                       land_texture=None):
     """Build terrain and heightmap for a single tile.
 
     Returns (terrain_array, terrain_info, heightmap_info).
@@ -227,6 +229,7 @@ def _build_single_tile(args, bbox, grid_size, s57_features,
     print(f"  Generating heightmap for {model_name}...")
     heightmap_info = terrain_to_heightmap(
         terrain, terrain_info, args.output_dir, model_name=model_name,
+        land_texture=land_texture,
     )
     print(f"    Saved to {heightmap_info['heightmap_path']}")
 
@@ -313,18 +316,28 @@ def main(argv=None):
             )
 
     # Step 1.5: OSM enrichment (optional)
-    if args.osm and s57_features is not None:
+    osm_features = None
+    if args.osm:
         try:
-            print("Fetching OSM data...")
-            osm_features = fetch_osm_features(bbox, cache_dir=args.cache_dir)
-            print(f"  Found {len(osm_features.buildings)} OSM buildings")
-            s57_features, n_matched, n_added = match_and_enrich(
-                s57_features, osm_features,
+            print("Fetching OSM data (with terrain features)...")
+            osm_features = fetch_osm_features(
+                bbox, cache_dir=args.cache_dir,
+                fetch_terrain_features=True,
             )
-            print(f"  Matched {n_matched} S57 buildings with OSM data")
-            print(f"  Added {n_added} OSM-only buildings")
+            print(f"  Found {len(osm_features.buildings)} OSM buildings, "
+                  f"{len(osm_features.landuse)} landuse, "
+                  f"{len(osm_features.roads)} roads, "
+                  f"{len(osm_features.parking)} parking, "
+                  f"{len(osm_features.natural)} natural areas")
+            if s57_features is not None:
+                s57_features, n_matched, n_added = match_and_enrich(
+                    s57_features, osm_features,
+                )
+                print(f"  Matched {n_matched} S57 buildings with OSM data")
+                print(f"  Added {n_added} OSM-only buildings")
         except Exception as e:
             print(f"  Warning: OSM enrichment failed, skipping: {e}")
+            osm_features = None
 
     # Step 2-4: Build terrain tiles
     ref_lat = bbox.center_lat
@@ -339,10 +352,25 @@ def main(argv=None):
         for name, tile_bbox, grid_power in tiles:
             grid_size = 2 ** grid_power + 1
             print(f"\nTile '{name}' ({grid_size}x{grid_size}):")
+
+            # Rasterize OSM texture for this tile
+            land_texture = None
+            if osm_features is not None:
+                tile_size_x, tile_size_y = _bbox_size_meters(tile_bbox)
+                tile_terrain_info = {
+                    "size_x": tile_size_x, "size_y": tile_size_y,
+                }
+                print("  Rasterizing OSM terrain texture...")
+                land_texture = rasterize_osm_texture(
+                    osm_features, tile_terrain_info, grid_size,
+                    ref_lat, ref_lon,
+                )
+
             terrain, terrain_info, heightmap_info = _build_single_tile(
                 args, tile_bbox, grid_size, s57_features,
                 ref_lat=ref_lat, ref_lon=ref_lon,
                 model_name=f"terrain_{name}",
+                land_texture=land_texture,
             )
             # Embed ENU offset directly in the heightmap <pos> element
             # (Gazebo's OGRE2 heightmap renderer uses <pos>, not model pose)
@@ -366,10 +394,29 @@ def main(argv=None):
         grid_size = 2 ** grid_power + 1
         if not args.fetch_etopo:
             print("Using S57-only terrain (land ramp + soundings).")
+
+        # Rasterize OSM texture for the single tile
+        land_texture = None
+        if osm_features is not None:
+            tile_size_x, tile_size_y = _bbox_size_meters(tile_bbox)
+            tile_terrain_info = {
+                "size_x": tile_size_x, "size_y": tile_size_y,
+            }
+            print("Rasterizing OSM terrain texture...")
+            land_texture = rasterize_osm_texture(
+                osm_features, tile_terrain_info, grid_size,
+                ref_lat, ref_lon,
+            )
+            n_features = (len(osm_features.landuse) + len(osm_features.roads)
+                          + len(osm_features.parking) + len(osm_features.natural))
+            print(f"  Rasterized {n_features} terrain features "
+                  f"onto {grid_size}x{grid_size} texture")
+
         first_terrain, first_terrain_info, heightmap_info = _build_single_tile(
             args, tile_bbox, grid_size, s57_features,
             ref_lat=ref_lat, ref_lon=ref_lon,
             model_name=f"{args.world_name}_terrain",
+            land_texture=land_texture,
         )
         heightmap_result = heightmap_info
 
