@@ -144,7 +144,6 @@ def _build_s57_terrain(
 
     # Distance transform on inverted mask (distance from water/shore into land)
     # Invert: water=1 (background), land=0 (features we measure distance from edge of)
-    water_mask = ~land_mask
     distance_cells = distance_transform_edt(
         land_mask, sampling=[cell_size_y, cell_size_x]
     )
