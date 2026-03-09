@@ -142,8 +142,8 @@ def _build_s57_terrain(
     cell_size_y = (bbox.north - bbox.south) / (grid_size - 1) * _METERS_PER_DEG_LAT
     cell_size_x = (bbox.east - bbox.west) / (grid_size - 1) * m_per_deg_lon
 
-    # Distance transform on inverted mask (distance from water/shore into land)
-    # Invert: water=1 (background), land=0 (features we measure distance from edge of)
+    # Distance transform on land mask (distance from shore into land interior)
+    # land_mask: land=1, water=0 — EDT measures distance from nearest 0-cell
     distance_cells = distance_transform_edt(
         land_mask, sampling=[cell_size_y, cell_size_x]
     )
