@@ -1,4 +1,7 @@
 *.pyc
+build/
+install/
+log/
 doc/html
 doc/manifest.yaml
 

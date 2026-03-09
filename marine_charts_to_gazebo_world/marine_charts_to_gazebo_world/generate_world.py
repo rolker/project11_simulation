@@ -15,13 +15,13 @@
 """CLI entry point for S57 world generation."""
 
 import argparse
-import math
 import os
 import sys
 import textwrap
 from datetime import datetime
 
 from .bathy_fetcher import fetch_etopo
+from .coordinates import latlon_to_enu
 from .feature_models import generate_feature_models
 from .heightmap import terrain_to_heightmap
 from .osm_fetcher import fetch_osm_features
@@ -29,13 +29,6 @@ from .osm_matcher import match_and_enrich
 from .s57_reader import BoundingBox, read_enc_directory
 from .terrain import build_terrain
 from .world_builder import generate_world_sdf
-
-# WGS84 approximate meters per degree
-_METERS_PER_DEG_LAT = 111_320.0
-
-
-def _meters_per_deg_lon(lat_deg):
-    return _METERS_PER_DEG_LAT * math.cos(math.radians(lat_deg))
 
 
 def _parse_bbox(s):
@@ -60,18 +53,21 @@ def _parse_tile(s):
 
 def _bbox_center_enu(tile_bbox, world_center_lat, world_center_lon):
     """Compute ENU offset of a tile's center from the world center."""
-    tile_clat = tile_bbox.center_lat
-    tile_clon = tile_bbox.center_lon
-    enu_x = (tile_clon - world_center_lon) * _meters_per_deg_lon(world_center_lat)
-    enu_y = (tile_clat - world_center_lat) * _METERS_PER_DEG_LAT
-    return enu_x, enu_y
+    return latlon_to_enu(
+        tile_bbox.center_lat, tile_bbox.center_lon,
+        world_center_lat, world_center_lon,
+    )
 
 
 def _bbox_size_meters(bbox):
-    """Compute approximate size of a bbox in meters."""
-    size_y = (bbox.north - bbox.south) * _METERS_PER_DEG_LAT
-    size_x = (bbox.east - bbox.west) * _meters_per_deg_lon(bbox.center_lat)
-    return size_x, size_y
+    """Compute size of a bbox in meters using ECEF-based ENU."""
+    e_sw, n_sw = latlon_to_enu(
+        bbox.south, bbox.west, bbox.center_lat, bbox.center_lon,
+    )
+    e_ne, n_ne = latlon_to_enu(
+        bbox.north, bbox.east, bbox.center_lat, bbox.center_lon,
+    )
+    return e_ne - e_sw, n_ne - n_sw
 
 
 def parse_args(argv=None):
@@ -196,7 +192,8 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 
-def _build_single_tile(args, bbox, grid_size, s57_features, model_name="terrain"):
+def _build_single_tile(args, bbox, grid_size, s57_features,
+                       ref_lat, ref_lon, model_name="terrain"):
     """Build terrain and heightmap for a single tile.
 
     Returns (terrain_array, terrain_info, heightmap_info).
@@ -215,6 +212,8 @@ def _build_single_tile(args, bbox, grid_size, s57_features, model_name="terrain"
     print(f"  Building terrain ({grid_size}x{grid_size})...")
     terrain, terrain_info = build_terrain(
         bbox=bbox,
+        ref_lat=ref_lat,
+        ref_lon=ref_lon,
         base_elevation=elevation,
         base_geotransform=metadata["geotransform"] if metadata else None,
         s57_features=s57_features,
@@ -328,6 +327,8 @@ def main(argv=None):
             print(f"  Warning: OSM enrichment failed, skipping: {e}")
 
     # Step 2-4: Build terrain tiles
+    ref_lat = bbox.center_lat
+    ref_lon = bbox.center_lon
     multi_tile = len(tiles) > 1
     first_terrain = None
     first_terrain_info = None
@@ -340,12 +341,13 @@ def main(argv=None):
             print(f"\nTile '{name}' ({grid_size}x{grid_size}):")
             terrain, terrain_info, heightmap_info = _build_single_tile(
                 args, tile_bbox, grid_size, s57_features,
+                ref_lat=ref_lat, ref_lon=ref_lon,
                 model_name=f"terrain_{name}",
             )
             # Embed ENU offset directly in the heightmap <pos> element
             # (Gazebo's OGRE2 heightmap renderer uses <pos>, not model pose)
             enu_x, enu_y = _bbox_center_enu(
-                tile_bbox, bbox.center_lat, bbox.center_lon,
+                tile_bbox, ref_lat, ref_lon,
             )
             heightmap_info["pos_x"] = enu_x
             heightmap_info["pos_y"] = enu_y
@@ -366,6 +368,7 @@ def main(argv=None):
             print("Using S57-only terrain (land ramp + soundings).")
         first_terrain, first_terrain_info, heightmap_info = _build_single_tile(
             args, tile_bbox, grid_size, s57_features,
+            ref_lat=ref_lat, ref_lon=ref_lon,
             model_name=f"{args.world_name}_terrain",
         )
         heightmap_result = heightmap_info
@@ -384,11 +387,24 @@ def main(argv=None):
         min_span = min(bbox.north - bbox.south, bbox.east - bbox.west)
         simplify_tol = min_span / 10000.0  # ~1m for typical coastal regions
 
+    # Compute terrain bounds in ENU for feature elevation sampling
+    terrain_bounds = None
+    if first_terrain is not None:
+        e_sw, n_sw = latlon_to_enu(bbox.south, bbox.west, ref_lat, ref_lon)
+        e_ne, n_ne = latlon_to_enu(bbox.north, bbox.east, ref_lat, ref_lon)
+        terrain_bounds = {
+            'min_east': e_sw,
+            'max_east': e_ne,
+            'min_north': n_sw,
+            'max_north': n_ne,
+        }
+
     if not args.no_features and s57_features is not None:
         print("Generating S57 feature models...")
         feature_sdf = generate_feature_models(
-            s57_features, bbox.center_lat, bbox.center_lon,
-            terrain=first_terrain, bbox=bbox, debug=args.debug_features,
+            s57_features, ref_lat, ref_lon,
+            terrain=first_terrain, terrain_bounds=terrain_bounds,
+            debug=args.debug_features,
             skip_categories=skip_categories,
             simplify_tolerance=simplify_tol,
             max_wall_segments=args.max_wall_segments,

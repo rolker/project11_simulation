@@ -17,7 +17,7 @@
 import math
 import re
 
-from marine_autonomy.wgs84 import toECEFfromDegrees
+from .coordinates import latlon_to_enu
 
 # Default extrusion heights by OBJL code
 _BUILDING_HEIGHTS = {
@@ -129,31 +129,22 @@ def _sanitize_objnam(objnam: str) -> str:
 
 
 def _latlon_to_enu(lat, lon, ref_lat, ref_lon):
-    """Convert WGS84 lat/lon to local ENU meters via ECEF."""
-    rx, ry, rz = toECEFfromDegrees(ref_lat, ref_lon)
-    px, py, pz = toECEFfromDegrees(lat, lon)
-    dx, dy, dz = px - rx, py - ry, pz - rz
-    lat_r = math.radians(ref_lat)
-    lon_r = math.radians(ref_lon)
-    sin_lat = math.sin(lat_r)
-    cos_lat = math.cos(lat_r)
-    sin_lon = math.sin(lon_r)
-    cos_lon = math.cos(lon_r)
-    east = -sin_lon * dx + cos_lon * dy
-    north = (-sin_lat * cos_lon * dx
-             - sin_lat * sin_lon * dy
-             + cos_lat * dz)
-    return east, north
+    """Convert WGS84 lat/lon to local ENU meters via ECEF.
+
+    Thin wrapper around coordinates.latlon_to_enu for backward compatibility.
+    """
+    return latlon_to_enu(lat, lon, ref_lat, ref_lon)
 
 
-def _sample_terrain_elevation(lat, lon, terrain, bbox):
-    """Look up terrain elevation at a lat/lon via bilinear interpolation.
+def _sample_terrain_elevation(east, north, terrain, terrain_bounds):
+    """Look up terrain elevation at an ENU position via bilinear interpolation.
 
     Args:
-        lat: Latitude in degrees.
-        lon: Longitude in degrees.
+        east: Easting in meters (ENU).
+        north: Northing in meters (ENU).
         terrain: 2D numpy array, north-up (row 0 = north).
-        bbox: BoundingBox with south/north/west/east.
+        terrain_bounds: dict with 'min_east', 'max_east', 'min_north',
+            'max_north' defining the ENU extent of the terrain grid.
 
     Returns:
         Elevation in meters, or 0.0 if outside bounds.
@@ -161,10 +152,15 @@ def _sample_terrain_elevation(lat, lon, terrain, bbox):
     if terrain is None:
         return 0.0
     rows, cols = terrain.shape
+    min_east = terrain_bounds['min_east']
+    max_east = terrain_bounds['max_east']
+    min_north = terrain_bounds['min_north']
+    max_north = terrain_bounds['max_north']
+
     # Fractional column (west=0, east=cols-1)
-    fc = (lon - bbox.west) / (bbox.east - bbox.west) * (cols - 1)
+    fc = (east - min_east) / (max_east - min_east) * (cols - 1)
     # Fractional row (north=0, south=rows-1)
-    fr = (bbox.north - lat) / (bbox.north - bbox.south) * (rows - 1)
+    fr = (max_north - north) / (max_north - min_north) * (rows - 1)
 
     if fc < 0 or fc > cols - 1 or fr < 0 or fr > rows - 1:
         return 0.0
@@ -860,7 +856,7 @@ def _pylon_model(name, x, y, z, height, collision=True):
 
 def generate_feature_models(
     features, center_lat, center_lon,
-    terrain=None, bbox=None, debug=False,
+    terrain=None, terrain_bounds=None, debug=False,
     skip_categories=None, simplify_tolerance=0.0,
     max_wall_segments=None,
 ):
@@ -871,7 +867,9 @@ def generate_feature_models(
         center_lat: World center latitude (WGS84 degrees).
         center_lon: World center longitude (WGS84 degrees).
         terrain: Optional 2D numpy array of elevation (north-up, meters).
-        bbox: Optional BoundingBox for terrain sampling.
+        terrain_bounds: Optional dict with 'min_east', 'max_east',
+            'min_north', 'max_north' defining the ENU extent of the
+            terrain grid (meters).
         debug: If True, polygon features use thin (0.2m) extrusions with
             distinct colors per type for footprint visualization.
         skip_categories: Optional set of category names to skip (e.g.
@@ -896,9 +894,10 @@ def generate_feature_models(
         features.buildings if 'buildings' not in skip else []
     ):
         centroid = building.geometry.Centroid()
-        z = _sample_terrain_elevation(
-            centroid.GetY(), centroid.GetX(), terrain, bbox
+        cx, cy = _latlon_to_enu(
+            centroid.GetY(), centroid.GetX(), center_lat, center_lon
         )
+        z = _sample_terrain_elevation(cx, cy, terrain, terrain_bounds)
         if debug:
             height = 0.2
             amb, dif = _DEBUG_COLORS['building']
@@ -1006,9 +1005,7 @@ def generate_feature_models(
         x, y = _latlon_to_enu(
             beacon.lat, beacon.lon, center_lat, center_lon
         )
-        z = _sample_terrain_elevation(
-            beacon.lat, beacon.lon, terrain, bbox
-        )
+        z = _sample_terrain_elevation(x, y, terrain, terrain_bounds)
         models.append(_beacon_model(
             f'beacon_{i:04d}', x, y, z=z, colour_code=beacon.colour,
             collision=_LAND,
@@ -1021,9 +1018,7 @@ def generate_feature_models(
         x, y = _latlon_to_enu(
             light.lat, light.lon, center_lat, center_lon
         )
-        z = _sample_terrain_elevation(
-            light.lat, light.lon, terrain, bbox
-        )
+        z = _sample_terrain_elevation(x, y, terrain, terrain_bounds)
         models.append(_light_model(f'light_{i:04d}', x, y, z=z,
                                    tower_height=light.height,
                                    colour_code=light.colour,
@@ -1085,7 +1080,7 @@ def generate_feature_models(
         else []
     ):
         x, y = _latlon_to_enu(mf.lat, mf.lon, center_lat, center_lon)
-        z = _sample_terrain_elevation(mf.lat, mf.lon, terrain, bbox)
+        z = _sample_terrain_elevation(x, y, terrain, terrain_bounds)
         models.append(_morfac_model(f'morfac_{i:04d}', x, y, z, mf.catmor,
                                     collision=_LAND))
 
@@ -1096,7 +1091,7 @@ def generate_feature_models(
         x, y = _latlon_to_enu(
             crane.lat, crane.lon, center_lat, center_lon
         )
-        z = _sample_terrain_elevation(crane.lat, crane.lon, terrain, bbox)
+        z = _sample_terrain_elevation(x, y, terrain, terrain_bounds)
         models.append(_crane_model(
             f'crane_{i:04d}', x, y, z, crane.catcrn, crane.height,
             collision=_LAND,
@@ -1109,7 +1104,7 @@ def generate_feature_models(
         x, y = _latlon_to_enu(
             pylon.lat, pylon.lon, center_lat, center_lon
         )
-        z = _sample_terrain_elevation(pylon.lat, pylon.lon, terrain, bbox)
+        z = _sample_terrain_elevation(x, y, terrain, terrain_bounds)
         models.append(_pylon_model(
             f'pylon_{i:04d}', x, y, z, pylon.height,
             collision=_LAND,
