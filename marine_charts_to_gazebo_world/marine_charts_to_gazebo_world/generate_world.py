@@ -314,14 +314,17 @@ def main(argv=None):
 
     # Step 1.5: OSM enrichment (optional)
     if args.osm and s57_features is not None:
-        print("Fetching OSM data...")
-        osm_features = fetch_osm_features(bbox, cache_dir=args.cache_dir)
-        print(f"  Found {len(osm_features.buildings)} OSM buildings")
-        s57_features, n_matched, n_added = match_and_enrich(
-            s57_features, osm_features,
-        )
-        print(f"  Matched {n_matched} S57 buildings with OSM data")
-        print(f"  Added {n_added} OSM-only buildings")
+        try:
+            print("Fetching OSM data...")
+            osm_features = fetch_osm_features(bbox, cache_dir=args.cache_dir)
+            print(f"  Found {len(osm_features.buildings)} OSM buildings")
+            s57_features, n_matched, n_added = match_and_enrich(
+                s57_features, osm_features,
+            )
+            print(f"  Matched {n_matched} S57 buildings with OSM data")
+            print(f"  Added {n_added} OSM-only buildings")
+        except Exception as e:
+            print(f"  Warning: OSM enrichment failed, skipping: {e}")
 
     # Step 2-4: Build terrain tiles
     ref_lat = bbox.center_lat

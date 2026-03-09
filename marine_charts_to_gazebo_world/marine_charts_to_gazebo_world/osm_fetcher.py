@@ -65,15 +65,13 @@ def _cache_key(bbox: BoundingBox) -> str:
 
 
 def _build_overpass_query(bbox: BoundingBox) -> str:
-    """Build Overpass QL query for buildings, piers, and bridges."""
+    """Build Overpass QL query for buildings in the bounding box."""
     b = f"{bbox.south},{bbox.west},{bbox.north},{bbox.east}"
     return (
         "[out:json][timeout:120];\n"
         "(\n"
         f'  way["building"]({b});\n'
         f'  relation["building"]({b});\n'
-        f'  way["man_made"="pier"]({b});\n'
-        f'  way["man_made"="bridge"]({b});\n'
         ");\n"
         "out geom;\n"
     )
