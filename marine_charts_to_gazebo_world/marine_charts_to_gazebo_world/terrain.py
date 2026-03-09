@@ -18,14 +18,20 @@ import logging
 from typing import Optional, Tuple
 
 import numpy as np
+from osgeo import gdal, ogr, osr
 from scipy.interpolate import LinearNDInterpolator
+from scipy.ndimage import distance_transform_edt
 
-from .s57_reader import BoundingBox, S57Features
+from .s57_reader import BoundingBox, DepthArea, S57Features
 
 logger = logging.getLogger(__name__)
 
 # WGS84 meters per degree (approximate, varies with latitude)
 _METERS_PER_DEG_LAT = 111_320.0
+
+# Shoreline ramp parameters
+_RAMP_DISTANCE_M = 25.0  # distance over which land ramps up
+_RAMP_MAX_ELEVATION = 5.0  # maximum land elevation in meters
 
 
 def _meters_per_deg_lon(lat_deg: float) -> float:
@@ -43,13 +49,15 @@ def build_terrain(
     """Build a terrain grid by combining base elevation with S57 data.
 
     The output grid is in a local ENU frame centered on the bbox center.
-    If base_elevation is None, terrain is synthesized from S57 data alone.
+    If base_elevation is None, terrain is built from S57 land areas and
+    soundings: land cells get a synthetic ramp from the shoreline, water
+    cells get interpolated sounding depths.
 
     Args:
         bbox: Geographic bounding box.
         base_elevation: Optional 2D array of elevation from ETOPO/GEBCO
-            (meters, positive up). If None, a flat surface is used and
-            S57 soundings provide the depth variation.
+            (meters, positive up). If None, uses S57-only terrain with
+            shoreline ramp.
         base_geotransform: GDAL GeoTransform of the base elevation raster.
             Required if base_elevation is provided.
         s57_features: Optional S57 features (soundings, depth areas, land).
@@ -80,16 +88,15 @@ def build_terrain(
         terrain = _sample_raster(
             base_elevation, base_geotransform, grid_lons, grid_lats
         )
+        # Overlay S57 soundings if available
+        if s57_features is not None and s57_features.soundings:
+            terrain = _overlay_soundings(
+                terrain, grid_lons, grid_lats, s57_features, bbox
+            )
     else:
-        # No base raster — synthesize from S57 data
-        terrain = _synthesize_from_s57(
-            grid_lons, grid_lats, s57_features, grid_size
-        )
-
-    # Overlay S57 soundings if available
-    if s57_features is not None and s57_features.soundings:
-        terrain = _overlay_soundings(
-            terrain, grid_lons, grid_lats, s57_features, bbox
+        # S57-only terrain: land ramp + sounding interpolation
+        terrain = _build_s57_terrain(
+            grid_lons, grid_lats, s57_features, grid_size, bbox
         )
 
     terrain_info = {
@@ -103,6 +110,199 @@ def build_terrain(
     }
 
     return terrain, terrain_info
+
+
+def _build_s57_terrain(
+    grid_lons: np.ndarray,
+    grid_lats: np.ndarray,
+    s57_features: Optional[S57Features],
+    grid_size: int,
+    bbox: BoundingBox,
+) -> np.ndarray:
+    """Build terrain from S57 land areas and soundings.
+
+    Land cells get a synthetic elevation ramp from the shoreline (0-5m
+    over 25m distance). Water cells get interpolated sounding depths,
+    or 0.0 if no soundings are available.
+    """
+    if s57_features is None:
+        return np.zeros((grid_size, grid_size), dtype=np.float64)
+
+    # Rasterize land areas and coastlines onto a binary mask
+    land_mask = _rasterize_land(
+        s57_features.land_areas, s57_features.coastlines,
+        bbox, grid_size,
+    )
+
+    # Compute distance from shore for land cells
+    center_lat = bbox.center_lat
+    m_per_deg_lon = _meters_per_deg_lon(center_lat)
+
+    # Cell sizes in meters (anisotropic)
+    cell_size_y = (bbox.north - bbox.south) / (grid_size - 1) * _METERS_PER_DEG_LAT
+    cell_size_x = (bbox.east - bbox.west) / (grid_size - 1) * m_per_deg_lon
+
+    # Distance transform on land mask (distance from shore into land interior)
+    # land_mask: land=1, water=0 — EDT measures distance from nearest 0-cell
+    distance_cells = distance_transform_edt(
+        land_mask, sampling=[cell_size_y, cell_size_x]
+    )
+
+    # Ramp land elevation: linear 0→5m over 25m, capped at 5m
+    land_elevation = np.minimum(
+        distance_cells / _RAMP_DISTANCE_M * _RAMP_MAX_ELEVATION,
+        _RAMP_MAX_ELEVATION,
+    )
+
+    # Start with water depths from soundings
+    water_terrain = _synthesize_from_s57(
+        grid_lons, grid_lats, s57_features, grid_size
+    )
+
+    # Clamp interpolated depths to depth area ranges
+    if s57_features.depth_areas:
+        da_min, da_max = _rasterize_depth_areas(
+            s57_features.depth_areas, bbox, grid_size,
+        )
+        da_mask = ~np.isnan(da_min)
+        if np.any(da_mask):
+            max_elev = -da_min[da_mask]  # shallowest allowed (elevation)
+            min_elev = -da_max[da_mask]  # deepest allowed (elevation)
+            water_terrain[da_mask] = np.clip(
+                water_terrain[da_mask], min_elev, max_elev,
+            )
+
+    # Combine: land gets ramp elevation, water gets sounding depths
+    terrain = np.where(land_mask, land_elevation, water_terrain)
+
+    return terrain
+
+
+def _rasterize_land(
+    land_areas, coastlines, bbox: BoundingBox, grid_size: int,
+) -> np.ndarray:
+    """Rasterize LNDARE polygons and COALNE lines onto a binary grid.
+
+    Returns a boolean mask where True = land.
+    """
+    if not land_areas and not coastlines:
+        return np.zeros((grid_size, grid_size), dtype=bool)
+
+    # Create in-memory OGR dataset with all land geometries
+    mem_driver = ogr.GetDriverByName('Memory')
+    mem_ds = mem_driver.CreateDataSource('land')
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(4326)
+    mem_layer = mem_ds.CreateLayer('land', srs, ogr.wkbPolygon)
+
+    # Add land area polygons
+    for geom in land_areas:
+        feat = ogr.Feature(mem_layer.GetLayerDefn())
+        feat.SetGeometry(geom)
+        mem_layer.CreateFeature(feat)
+
+    # Rasterize using GDAL
+    # GeoTransform: (west, pixel_width, 0, north, 0, -pixel_height)
+    pixel_width = (bbox.east - bbox.west) / grid_size
+    pixel_height = (bbox.north - bbox.south) / grid_size
+    gt = (bbox.west, pixel_width, 0.0, bbox.north, 0.0, -pixel_height)
+
+    # Create in-memory raster
+    rast_driver = gdal.GetDriverByName('MEM')
+    rast_ds = rast_driver.Create('', grid_size, grid_size, 1, gdal.GDT_Byte)
+    rast_ds.SetGeoTransform(gt)
+    rast_ds.SetProjection(srs.ExportToWkt())
+    band = rast_ds.GetRasterBand(1)
+    band.Fill(0)
+
+    # Rasterize polygons — burn value 1 for land
+    gdal.RasterizeLayer(rast_ds, [1], mem_layer, burn_values=[1])
+
+    # Read result
+    land_mask = band.ReadAsArray().astype(bool)
+
+    # Also rasterize coastlines as land boundary pixels
+    if coastlines:
+        line_layer = mem_ds.CreateLayer('coast', srs, ogr.wkbLineString)
+        for geom in coastlines:
+            feat = ogr.Feature(line_layer.GetLayerDefn())
+            feat.SetGeometry(geom)
+            line_layer.CreateFeature(feat)
+
+        # Burn coastline pixels onto the same mask
+        coast_ds = rast_driver.Create('', grid_size, grid_size, 1, gdal.GDT_Byte)
+        coast_ds.SetGeoTransform(gt)
+        coast_ds.SetProjection(srs.ExportToWkt())
+        coast_band = coast_ds.GetRasterBand(1)
+        coast_band.Fill(0)
+        gdal.RasterizeLayer(coast_ds, [1], line_layer, burn_values=[1])
+        coast_mask = coast_band.ReadAsArray().astype(bool)
+        land_mask |= coast_mask
+
+    # Clean up
+    mem_ds = None
+    rast_ds = None
+
+    return land_mask
+
+
+def _rasterize_depth_areas(
+    depth_areas: list, bbox: BoundingBox, grid_size: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Rasterize depth areas with scale ordering onto min/max depth grids.
+
+    Depth areas are sorted by compilation_scale descending (least detailed
+    first) so that more detailed charts overwrite less detailed ones.
+
+    Returns:
+        Tuple of (min_depth_grid, max_depth_grid) with NaN where no
+        depth area covers the cell.  Values are in meters, positive down.
+    """
+    min_depth = np.full((grid_size, grid_size), np.nan, dtype=np.float64)
+    max_depth = np.full((grid_size, grid_size), np.nan, dtype=np.float64)
+
+    if not depth_areas:
+        return min_depth, max_depth
+
+    # Sort by compilation_scale descending (coarsest first, detailed last)
+    sorted_areas = sorted(
+        depth_areas, key=lambda da: da.compilation_scale, reverse=True,
+    )
+
+    # GeoTransform matching _rasterize_land
+    pixel_width = (bbox.east - bbox.west) / grid_size
+    pixel_height = (bbox.north - bbox.south) / grid_size
+    gt = (bbox.west, pixel_width, 0.0, bbox.north, 0.0, -pixel_height)
+
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(4326)
+    wkt = srs.ExportToWkt()
+    rast_driver = gdal.GetDriverByName('MEM')
+
+    for da in sorted_areas:
+        # Rasterize this polygon to a mask
+        mem_driver = ogr.GetDriverByName('Memory')
+        mem_ds = mem_driver.CreateDataSource('da')
+        mem_layer = mem_ds.CreateLayer('da', srs, ogr.wkbPolygon)
+        feat = ogr.Feature(mem_layer.GetLayerDefn())
+        feat.SetGeometry(da.geometry)
+        mem_layer.CreateFeature(feat)
+
+        rast_ds = rast_driver.Create('', grid_size, grid_size, 1, gdal.GDT_Byte)
+        rast_ds.SetGeoTransform(gt)
+        rast_ds.SetProjection(wkt)
+        band = rast_ds.GetRasterBand(1)
+        band.Fill(0)
+        gdal.RasterizeLayer(rast_ds, [1], mem_layer, burn_values=[1])
+
+        mask = band.ReadAsArray().astype(bool)
+        min_depth[mask] = da.min_depth
+        max_depth[mask] = da.max_depth
+
+        mem_ds = None
+        rast_ds = None
+
+    return min_depth, max_depth
 
 
 def _synthesize_from_s57(
@@ -166,7 +366,6 @@ def _sample_raster(
     pixel_y = (query_lats - gt[3]) / gt[5]
 
     rows, cols = data.shape
-    result = np.full(query_lons.shape, np.nan, dtype=np.float64)
 
     # Bilinear interpolation
     px = np.clip(pixel_x, 0, cols - 1)

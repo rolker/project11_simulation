@@ -111,8 +111,21 @@ def main():
         f"{bounds['south']},{bounds['west']},{bounds['north']},{bounds['east']}",
         '--output-dir', args.output_dir,
         '--world-name', world_name,
-        '--grid-power', str(grid_power),
     ]
+
+    # Multi-tile or single-tile terrain
+    tiles = config.get('tiles')
+    if tiles:
+        for tile in tiles:
+            tile_str = (
+                f"{tile['name']}:"
+                f"{tile['south']},{tile['west']},"
+                f"{tile['north']},{tile['east']}:"
+                f"{tile['grid_power']}"
+            )
+            gen_args.extend(['--tile', tile_str])
+    else:
+        gen_args.extend(['--grid-power', str(grid_power)])
 
     # Camera config (optional)
     camera = config.get('camera', {})
@@ -120,6 +133,35 @@ def main():
         gen_args.extend(['--camera-far-scale', str(camera['far_scale'])])
     if 'direction' in camera:
         gen_args.extend(['--camera-direction', camera['direction']])
+
+    # OSM enrichment (optional)
+    if config.get('osm'):
+        gen_args.append('--osm')
+
+    # ETOPO bathymetry (optional)
+    if config.get('fetch_etopo'):
+        gen_args.append('--fetch-etopo')
+
+    # Feature category filtering (optional)
+    skip = config.get('skip_categories')
+    if skip:
+        if isinstance(skip, list):
+            skip = ','.join(skip)
+        gen_args.extend(['--skip-categories', skip])
+
+    # Disable all features (optional)
+    if config.get('no_features'):
+        gen_args.append('--no-features')
+
+    # Geometry simplification tolerance (optional)
+    simplify = config.get('simplify_tolerance')
+    if simplify is not None:
+        gen_args.extend(['--simplify-tolerance', str(simplify)])
+
+    # Wall segment budget (optional)
+    max_segs = config.get('max_wall_segments')
+    if max_segs is not None:
+        gen_args.extend(['--max-wall-segments', str(max_segs)])
 
     # ENC root: config override takes precedence, then env var
     enc_root = config.get('enc_root') or os.environ.get('ROS_S57_ENC_ROOT')

@@ -22,6 +22,7 @@ from launch.actions import (
     DeclareLaunchArgument,
     ExecuteProcess,
     OpaqueFunction,
+    Shutdown,
 )
 from launch.substitutions import LaunchConfiguration
 
@@ -43,6 +44,7 @@ def _launch_gazebo(context, *args, **kwargs):
         ExecuteProcess(
             cmd=['gz', 'sim', '-v4' if verbose else '-v1', sdf_path],
             output='screen',
+            on_exit=Shutdown(),
         ),
     ]
 

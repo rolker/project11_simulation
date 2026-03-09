@@ -1,16 +1,39 @@
-# Portsmouth Harbor to Isles of Shoals region parameters
-# Covers from Memorial Bridge south to the Isles of Shoals
+# Portsmouth Harbor to Isles of Shoals — multi-tile
 bounds:
   south: 42.942
-  west: -70.76
-  north: 43.085
+  west: -70.7299
+  north: 43.0895
   east: -70.565
 
 world_name: portsmouth_nh_portsmouth_to_isles
 
-# Heightmap grid: 2^grid_power + 1 (9 = 513x513)
-grid_power: 9
+tiles:
+  - name: harbor
+    south: 43.0625
+    west: -70.7299
+    north: 43.0895
+    east: -70.565
+    grid_power: 10   # 1025x1025
 
-# Optional: path to S57 ENC data directory.
-# Set ROS_S57_ENC_ROOT env var or override here.
-# enc_root: /path/to/ENC_ROOT
+  - name: ocean
+    south: 43.023
+    west: -70.7299
+    north: 43.0625
+    east: -70.565
+    grid_power: 9    # 513x513 (open water, lower res OK)
+
+  - name: isles
+    south: 42.942
+    west: -70.7299
+    north: 43.023
+    east: -70.565
+    grid_power: 10   # 1025x1025
+
+skip_categories:
+  - buoys
+  - beacons
+  - piles
+  - mooring_facilities
+  - cranes
+  - pylons
+  - rip_rap

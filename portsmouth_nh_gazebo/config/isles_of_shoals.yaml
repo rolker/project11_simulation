@@ -1,4 +1,3 @@
-# Isles of Shoals region parameters
 bounds:
   south: 42.942
   west: -70.665
@@ -7,9 +6,13 @@ bounds:
 
 world_name: portsmouth_nh_isles_of_shoals
 
-# Heightmap grid: 2^grid_power + 1 (9 = 513x513)
-grid_power: 9
+grid_power: 10   # 1025x1025
 
-# Optional: path to S57 ENC data directory.
-# Set ROS_S57_ENC_ROOT env var or override here.
-# enc_root: /path/to/ENC_ROOT
+skip_categories:
+  - buoys
+  - beacons
+  - piles
+  - mooring_facilities
+  - cranes
+  - pylons
+  - rip_rap

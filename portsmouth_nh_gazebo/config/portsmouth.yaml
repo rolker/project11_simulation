@@ -1,15 +1,19 @@
-# Portsmouth NH harbor region parameters
+# ~3.3x3 km region around UNH pier (~43.076N, -70.710W)
 bounds:
-  south: 43.065
-  west: -70.72
-  north: 43.085
-  east: -70.70
+  south: 43.0625
+  west: -70.7299
+  north: 43.0895
+  east: -70.6894
 
 world_name: portsmouth_nh_harbor
 
-# Heightmap grid: 2^grid_power + 1 (9 = 513x513)
-grid_power: 9
+grid_power: 10   # 1025x1025 (~3.2 m/cell)
 
-# Optional: path to S57 ENC data directory.
-# Set ROS_S57_ENC_ROOT env var or override here.
-# enc_root: /path/to/ENC_ROOT
+skip_categories:
+  - buoys
+  - beacons
+  - piles
+  - mooring_facilities
+  - cranes
+  - pylons
+  - rip_rap

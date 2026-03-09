@@ -96,6 +96,8 @@ def terrain_to_heightmap(
         "size_x": terrain_info["size_x"],
         "size_y": terrain_info["size_y"],
         "size_z": elev_range,
+        "pos_x": 0.0,
+        "pos_y": 0.0,
         "pos_z": min_elev,
         "min_elevation": min_elev,
         "max_elevation": max_elev,
@@ -169,6 +171,7 @@ def _write_model_config(model_dir: str, model_name: str):
 
 def _write_model_sdf(model_dir: str, info: dict):
     """Write the terrain model SDF with heightmap visual and collision."""
+    model_name = info.get("model_name", "terrain")
     # Blend height: transition from seafloor to land texture.
     # Expressed relative to the heightmap's pos_z (min elevation).
     # Sea level is at 0m, so offset from min = -min_elevation.
@@ -201,7 +204,7 @@ def _write_model_sdf(model_dir: str, info: dict):
             </blend>
             <uri>model://{mn}/heightmap.png</uri>
             <size>{info['size_x']:.1f} {info['size_y']:.1f} {info['size_z']:.1f}</size>
-            <pos>0 0 {info['pos_z']:.1f}</pos>
+            <pos>{info['pos_x']:.2f} {info['pos_y']:.2f} {info['pos_z']:.1f}</pos>
           </heightmap>
         </geometry>
       </visual>
@@ -210,7 +213,7 @@ def _write_model_sdf(model_dir: str, info: dict):
           <heightmap>
             <uri>model://{mn}/heightmap.png</uri>
             <size>{info['size_x']:.1f} {info['size_y']:.1f} {info['size_z']:.1f}</size>
-            <pos>0 0 {info['pos_z']:.1f}</pos>
+            <pos>{info['pos_x']:.2f} {info['pos_y']:.2f} {info['pos_z']:.1f}</pos>
           </heightmap>
         </geometry>
       </collision>

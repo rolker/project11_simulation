@@ -93,41 +93,103 @@ def _compute_camera(heightmap_info, camera_config=None):
     return camera_pose, camera_far
 
 
+def _build_terrain_includes(heightmap_info):
+    """Build SDF <include> elements for terrain tiles.
+
+    Args:
+        heightmap_info: Either a single dict or a list of dicts for multi-tile.
+            ENU offsets are embedded in each tile's heightmap <pos> element,
+            not in the <include> pose (Gazebo's OGRE2 heightmap renderer
+            uses <pos> directly, ignoring model pose).
+
+    Returns:
+        String of SDF <include> elements.
+    """
+    if isinstance(heightmap_info, dict):
+        model_name = heightmap_info.get("model_name", "terrain")
+        return f'    <include>\n      <uri>{model_name}</uri>\n    </include>'
+
+    # Multiple tiles — position is already in each model's heightmap <pos>
+    includes = []
+    for info in heightmap_info:
+        model_name = info.get("model_name", "terrain")
+        includes.append(
+            f'    <include>\n'
+            f'      <uri>{model_name}</uri>\n'
+            f'    </include>'
+        )
+    return '\n'.join(includes)
+
+
 def generate_world_sdf(
     world_name: str,
     center_lat: float,
     center_lon: float,
     output_dir: str,
-    heightmap_info: dict,
+    heightmap_info,
     camera_config: dict = None,
+    feature_models: str = "",
+    water_size_x: float = 0.0,
+    water_size_y: float = 0.0,
 ) -> str:
     """Generate a complete Gazebo Harmonic world SDF file.
+
+    The world includes:
+    - Spherical coordinates (WGS84, ENU)
+    - DART physics (4ms step)
+    - Standard Gazebo system plugins
+    - Terrain heightmap model(s)
+    - Semi-transparent water surface plane
+    - Scene with sky and lighting
+    - Optional S57 chart feature models (buildings, buoys, etc.)
 
     Args:
         world_name: Name for the world (used in filename and SDF).
         center_lat: Center latitude of the region (WGS84 degrees).
         center_lon: Center longitude of the region (WGS84 degrees).
         output_dir: Directory to write the world SDF into.
-        heightmap_info: dict from terrain_to_heightmap() with terrain params.
+        heightmap_info: dict from terrain_to_heightmap() for single tile,
+            or list of dicts for multi-tile.
         camera_config: optional dict with camera overrides (see _compute_camera).
+        feature_models: SDF model XML strings for S57 features (default empty).
+        water_size_x: Override water plane width (meters). If 0, uses
+            heightmap_info size.
+        water_size_y: Override water plane height (meters). If 0, uses
+            heightmap_info size.
 
     Returns:
         Path to the generated SDF file.
     """
-    camera_pose, camera_far = _compute_camera(heightmap_info, camera_config)
+    # Determine water size
+    if water_size_x > 0 and water_size_y > 0:
+        wx, wy = water_size_x, water_size_y
+    elif isinstance(heightmap_info, dict):
+        wx = heightmap_info["size_x"]
+        wy = heightmap_info["size_y"]
+    else:
+        # Multi-tile: use the max extent
+        wx = max(info["size_x"] for info in heightmap_info)
+        wy = max(info["size_y"] for info in heightmap_info)
+
+    # For camera computation, provide size info
+    camera_size_info = {"size_x": wx, "size_y": wy}
+    camera_pose, camera_far = _compute_camera(camera_size_info, camera_config)
 
     with open(_TEMPLATE_PATH) as f:
         template = f.read()
+
+    terrain_includes = _build_terrain_includes(heightmap_info)
 
     sdf_content = template.format(
         world_name=world_name,
         center_lat=center_lat,
         center_lon=center_lon,
-        terrain_model_name=heightmap_info["model_name"],
-        water_size_x=heightmap_info["size_x"],
-        water_size_y=heightmap_info["size_y"],
+        water_size_x=wx,
+        water_size_y=wy,
+        terrain_includes=terrain_includes,
         camera_pose=camera_pose,
         camera_far=camera_far,
+        feature_models=feature_models,
     )
 
     sdf_path = os.path.join(output_dir, f"{world_name}.sdf")

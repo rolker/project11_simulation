@@ -15,16 +15,63 @@
 """CLI entry point for S57 world generation."""
 
 import argparse
+import math
 import os
 import sys
 import textwrap
 from datetime import datetime
 
 from .bathy_fetcher import fetch_etopo
+from .feature_models import generate_feature_models
 from .heightmap import terrain_to_heightmap
+from .osm_fetcher import fetch_osm_features
+from .osm_matcher import match_and_enrich
 from .s57_reader import BoundingBox, read_enc_directory
 from .terrain import build_terrain
 from .world_builder import generate_world_sdf
+
+# WGS84 approximate meters per degree
+_METERS_PER_DEG_LAT = 111_320.0
+
+
+def _meters_per_deg_lon(lat_deg):
+    return _METERS_PER_DEG_LAT * math.cos(math.radians(lat_deg))
+
+
+def _parse_bbox(s):
+    """Parse 'south,west,north,east' string to BoundingBox."""
+    parts = [float(x) for x in s.split(",")]
+    if len(parts) != 4:
+        raise ValueError
+    return BoundingBox(south=parts[0], west=parts[1],
+                       north=parts[2], east=parts[3])
+
+
+def _parse_tile(s):
+    """Parse 'name:south,west,north,east:grid_power' string."""
+    parts = s.split(":")
+    if len(parts) != 3:
+        raise ValueError(f"Tile must be name:bounds:power, got: {s}")
+    name = parts[0]
+    bbox = _parse_bbox(parts[1])
+    grid_power = int(parts[2])
+    return name, bbox, grid_power
+
+
+def _bbox_center_enu(tile_bbox, world_center_lat, world_center_lon):
+    """Compute ENU offset of a tile's center from the world center."""
+    tile_clat = tile_bbox.center_lat
+    tile_clon = tile_bbox.center_lon
+    enu_x = (tile_clon - world_center_lon) * _meters_per_deg_lon(world_center_lat)
+    enu_y = (tile_clat - world_center_lat) * _METERS_PER_DEG_LAT
+    return enu_x, enu_y
+
+
+def _bbox_size_meters(bbox):
+    """Compute approximate size of a bbox in meters."""
+    size_y = (bbox.north - bbox.south) * _METERS_PER_DEG_LAT
+    size_x = (bbox.east - bbox.west) * _meters_per_deg_lon(bbox.center_lat)
+    return size_x, size_y
 
 
 def parse_args(argv=None):
@@ -32,24 +79,33 @@ def parse_args(argv=None):
         description="Generate Gazebo Harmonic SDF worlds from S57 ENC data.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
-            Example:
+            Example (single tile):
               generate_world \\
                 --enc-root /path/to/ENC_ROOT \\
                 --bounds 43.065,-70.72,43.085,-70.70 \\
+                --output-dir /tmp/portsmouth \\
+                --world-name portsmouth_harbor
+
+            Example (multi-tile):
+              generate_world \\
+                --bounds 42.98,-70.76,43.085,-70.60 \\
+                --tile harbor:43.055,-70.76,43.085,-70.70:10 \\
+                --tile ocean:42.98,-70.76,43.055,-70.60:9 \\
                 --output-dir /tmp/portsmouth \\
                 --world-name portsmouth_harbor
         """),
     )
     parser.add_argument(
         "--enc-root",
+        default=os.environ.get("ROS_S57_ENC_ROOT"),
         help="Root directory containing S57 ENC .000 files. "
-        "If omitted, only online bathymetry data is used.",
+        "Defaults to $ROS_S57_ENC_ROOT if set.",
     )
     parser.add_argument(
         "--bounds",
         required=True,
-        help="Bounding box as south,west,north,east in decimal degrees. "
-        "Example: 43.065,-70.72,43.085,-70.70",
+        help="Overall bounding box as south,west,north,east in decimal degrees. "
+        "Used for S57/OSM features and water plane.",
     )
     parser.add_argument(
         "--output-dir",
@@ -65,7 +121,15 @@ def parse_args(argv=None):
         "--grid-power",
         type=int,
         default=9,
-        help="Heightmap grid size as 2^N + 1 (default: 9 = 513x513).",
+        help="Heightmap grid size as 2^N + 1 (default: 9 = 513x513). "
+        "Used when no --tile args are given.",
+    )
+    parser.add_argument(
+        "--tile",
+        action="append",
+        metavar="NAME:S,W,N,E:POWER",
+        help="Terrain tile as name:south,west,north,east:grid_power. "
+        "Can be specified multiple times for multi-tile worlds.",
     )
     parser.add_argument(
         "--cache-dir",
@@ -84,19 +148,98 @@ def parse_args(argv=None):
         choices=["north", "south", "east", "west"],
         help="Initial camera viewing direction (default: north).",
     )
+    parser.add_argument(
+        "--fetch-etopo",
+        action="store_true",
+        help="Fetch ETOPO online bathymetry as base elevation. "
+        "By default, terrain is built from S57 data only (land ramp + soundings).",
+    )
+    parser.add_argument(
+        "--no-features",
+        action="store_true",
+        help="Disable S57 feature placement (buildings, buoys, etc.).",
+    )
+    parser.add_argument(
+        "--debug-features",
+        action="store_true",
+        help="Use thin (0.2m) extrusions with distinct colors per feature "
+        "type for footprint visualization.",
+    )
+    parser.add_argument(
+        "--osm",
+        action="store_true",
+        help="Enrich S57 buildings with OpenStreetMap data (heights, "
+        "materials, colours) via the Overpass API.",
+    )
+    parser.add_argument(
+        "--skip-categories",
+        help="Comma-separated list of feature categories to skip. "
+        "Valid categories: buildings, pontoons, bridges, buoys, beacons, "
+        "lights, shore_constructions, piles, mooring_facilities, cranes, "
+        "pylons.",
+    )
+    parser.add_argument(
+        "--simplify-tolerance",
+        type=float,
+        default=None,
+        help="Geometry simplification tolerance in degrees. "
+        "If not set, derived from the world bounding box "
+        "(~1m resolution for the smaller dimension).",
+    )
+    parser.add_argument(
+        "--max-wall-segments",
+        type=int,
+        default=None,
+        help="Maximum number of wall segments for shore constructions. "
+        "Limits the total SLCONS segment count across all features.",
+    )
     return parser.parse_args(argv)
+
+
+def _build_single_tile(args, bbox, grid_size, s57_features, model_name="terrain"):
+    """Build terrain and heightmap for a single tile.
+
+    Returns (terrain_array, terrain_info, heightmap_info).
+    """
+    # Fetch online bathymetry (opt-in)
+    elevation = None
+    metadata = None
+    if args.fetch_etopo:
+        print(f"  Fetching ETOPO for {model_name}...")
+        try:
+            elevation, metadata = fetch_etopo(bbox, cache_dir=args.cache_dir)
+            print(f"    Downloaded {elevation.shape[0]}x{elevation.shape[1]} grid")
+        except Exception as e:
+            print(f"    Warning: ETOPO download failed: {e}", file=sys.stderr)
+
+    print(f"  Building terrain ({grid_size}x{grid_size})...")
+    terrain, terrain_info = build_terrain(
+        bbox=bbox,
+        base_elevation=elevation,
+        base_geotransform=metadata["geotransform"] if metadata else None,
+        s57_features=s57_features,
+        grid_size=grid_size,
+    )
+    print(
+        f"    Range: {terrain_info['min_elevation']:.1f}m "
+        f"to {terrain_info['max_elevation']:.1f}m"
+    )
+
+    print(f"  Generating heightmap for {model_name}...")
+    heightmap_info = terrain_to_heightmap(
+        terrain, terrain_info, args.output_dir, model_name=model_name,
+    )
+    print(f"    Saved to {heightmap_info['heightmap_path']}")
+
+    return terrain, terrain_info, heightmap_info
 
 
 def main(argv=None):
     args = parse_args(argv)
 
-    # Parse bounding box
+    # Parse overall bounding box
     try:
-        parts = [float(x) for x in args.bounds.split(",")]
-        if len(parts) != 4:
-            raise ValueError
-        bbox = BoundingBox(south=parts[0], west=parts[1],
-                           north=parts[2], east=parts[3])
+        bbox = _parse_bbox(args.bounds)
     except (ValueError, IndexError):
         print(
             "Error: --bounds must be four comma-separated decimal degree values: "
@@ -112,14 +255,27 @@ def main(argv=None):
         )
         return 1
 
-    if args.grid_power < 1 or args.grid_power > 14:
-        print(
-            "Error: --grid-power must be between 1 and 14",
-            file=sys.stderr,
-        )
-        return 1
+    # Parse tile specs (or use bounds as single tile)
+    tiles = []
+    if args.tile:
+        for tile_str in args.tile:
+            try:
+                name, tile_bbox, grid_power = _parse_tile(tile_str)
+                if grid_power < 1 or grid_power > 14:
+                    raise ValueError("grid_power out of range")
+                tiles.append((name, tile_bbox, grid_power))
+            except ValueError as e:
+                print(f"Error parsing --tile: {e}", file=sys.stderr)
+                return 1
+    else:
+        if args.grid_power < 1 or args.grid_power > 14:
+            print(
+                "Error: --grid-power must be between 1 and 14",
+                file=sys.stderr,
+            )
+            return 1
+        tiles.append(("terrain", bbox, args.grid_power))
 
-    grid_size = 2 ** args.grid_power + 1
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Step 1: Read S57 charts (optional)
@@ -133,72 +289,140 @@ def main(argv=None):
             f"{len(s57_features.land_areas)} land areas, "
             f"{len(s57_features.coastlines)} coastlines"
         )
-
-    # Step 2: Fetch online bathymetry
-    elevation = None
-    metadata = None
-    print("Fetching ETOPO elevation data...")
-    try:
-        elevation, metadata = fetch_etopo(bbox, cache_dir=args.cache_dir)
-        print(f"  Downloaded {elevation.shape[0]}x{elevation.shape[1]} grid")
-        print(
-            f"  Elevation range: {elevation.min():.1f}m to "
-            f"{elevation.max():.1f}m"
-        )
-    except Exception as e:
-        print(f"  Warning: ETOPO download failed: {e}", file=sys.stderr)
-        if s57_features is None or not s57_features.soundings:
+        n_features = sum([
+            len(s57_features.buildings), len(s57_features.pontoons),
+            len(s57_features.bridges), len(s57_features.buoys),
+            len(s57_features.beacons), len(s57_features.lights),
+            len(s57_features.shore_constructions),
+            len(s57_features.piles),
+            len(s57_features.mooring_facilities),
+            len(s57_features.cranes), len(s57_features.pylons),
+        ])
+        if n_features > 0:
             print(
-                "Error: No elevation data available. Provide --enc-root with "
-                "S57 charts or ensure network access for ETOPO download.",
-                file=sys.stderr,
+                f"  Found {len(s57_features.buildings)} buildings, "
+                f"{len(s57_features.pontoons)} pontoons, "
+                f"{len(s57_features.bridges)} bridges, "
+                f"{len(s57_features.buoys)} buoys, "
+                f"{len(s57_features.beacons)} beacons, "
+                f"{len(s57_features.lights)} lights, "
+                f"{len(s57_features.shore_constructions)} shore constructions, "
+                f"{len(s57_features.piles)} piles, "
+                f"{len(s57_features.mooring_facilities)} mooring facilities, "
+                f"{len(s57_features.cranes)} cranes, "
+                f"{len(s57_features.pylons)} pylons"
             )
-            return 1
-        print("  Falling back to S57-only terrain generation.")
 
-    # Step 3: Build terrain surface
-    print(f"Building terrain ({grid_size}x{grid_size})...")
-    terrain, terrain_info = build_terrain(
-        bbox=bbox,
-        base_elevation=elevation,
-        base_geotransform=metadata["geotransform"] if metadata else None,
-        s57_features=s57_features,
-        grid_size=grid_size,
-    )
-    print(
-        f"  Terrain range: {terrain_info['min_elevation']:.1f}m "
-        f"to {terrain_info['max_elevation']:.1f}m"
-    )
+    # Step 1.5: OSM enrichment (optional)
+    if args.osm and s57_features is not None:
+        try:
+            print("Fetching OSM data...")
+            osm_features = fetch_osm_features(bbox, cache_dir=args.cache_dir)
+            print(f"  Found {len(osm_features.buildings)} OSM buildings")
+            s57_features, n_matched, n_added = match_and_enrich(
+                s57_features, osm_features,
+            )
+            print(f"  Matched {n_matched} S57 buildings with OSM data")
+            print(f"  Added {n_added} OSM-only buildings")
+        except Exception as e:
+            print(f"  Warning: OSM enrichment failed, skipping: {e}")
 
-    # Step 4: Generate heightmap
-    terrain_model_name = f"{args.world_name}_terrain"
-    print(f"Generating heightmap (model: {terrain_model_name})...")
-    heightmap_info = terrain_to_heightmap(
-        terrain, terrain_info, args.output_dir,
-        model_name=terrain_model_name,
-    )
-    print(f"  Heightmap saved to {heightmap_info['heightmap_path']}")
+    # Step 2-4: Build terrain tiles
+    multi_tile = len(tiles) > 1
+    first_terrain = None
+    first_terrain_info = None
 
-    # Step 5: Generate world SDF
+    if multi_tile:
+        print(f"Building {len(tiles)} terrain tiles...")
+        tile_results = []  # list of heightmap_info dicts (with pos_x/pos_y set)
+        for name, tile_bbox, grid_power in tiles:
+            grid_size = 2 ** grid_power + 1
+            print(f"\nTile '{name}' ({grid_size}x{grid_size}):")
+            terrain, terrain_info, heightmap_info = _build_single_tile(
+                args, tile_bbox, grid_size, s57_features,
+                model_name=f"terrain_{name}",
+            )
+            # Embed ENU offset directly in the heightmap <pos> element
+            # (Gazebo's OGRE2 heightmap renderer uses <pos>, not model pose)
+            enu_x, enu_y = _bbox_center_enu(
+                tile_bbox, bbox.center_lat, bbox.center_lon,
+            )
+            heightmap_info["pos_x"] = enu_x
+            heightmap_info["pos_y"] = enu_y
+            # Rewrite model.sdf with updated position
+            from .heightmap import _write_model_sdf
+            model_dir = os.path.join(args.output_dir, heightmap_info["model_name"])
+            _write_model_sdf(model_dir, heightmap_info)
+            print(f"    ENU offset: ({enu_x:.1f}, {enu_y:.1f})m")
+            tile_results.append(heightmap_info)
+            if first_terrain is None:
+                first_terrain = terrain
+                first_terrain_info = terrain_info
+        heightmap_result = tile_results
+    else:
+        name, tile_bbox, grid_power = tiles[0]
+        grid_size = 2 ** grid_power + 1
+        if not args.fetch_etopo:
+            print("Using S57-only terrain (land ramp + soundings).")
+        first_terrain, first_terrain_info, heightmap_info = _build_single_tile(
+            args, tile_bbox, grid_size, s57_features,
+            model_name=f"{args.world_name}_terrain",
+        )
+        heightmap_result = heightmap_info
+
+    # Step 5: Generate feature models (optional)
+    feature_sdf = ""
+    skip_categories = set()
+    if args.skip_categories:
+        skip_categories = {c.strip() for c in args.skip_categories.split(',')}
+
+    # Compute simplification tolerance from world scale if not specified.
+    # Default: ~1m expressed in degrees (via the smaller bbox dimension).
+    if args.simplify_tolerance is not None:
+        simplify_tol = args.simplify_tolerance
+    else:
+        min_span = min(bbox.north - bbox.south, bbox.east - bbox.west)
+        simplify_tol = min_span / 10000.0  # ~1m for typical coastal regions
+
+    if not args.no_features and s57_features is not None:
+        print("Generating S57 feature models...")
+        feature_sdf = generate_feature_models(
+            s57_features, bbox.center_lat, bbox.center_lon,
+            terrain=first_terrain, bbox=bbox, debug=args.debug_features,
+            skip_categories=skip_categories,
+            simplify_tolerance=simplify_tol,
+            max_wall_segments=args.max_wall_segments,
+        )
+        if feature_sdf:
+            n_models = feature_sdf.count("<model name=")
+            print(f"  Generated {n_models} feature models")
+        else:
+            print("  No placeable features found")
+
+    # Step 6: Generate world SDF
     camera_config = {}
     if args.camera_far_scale is not None:
         camera_config["far_scale"] = args.camera_far_scale
     if args.camera_direction is not None:
         camera_config["direction"] = args.camera_direction
 
+    water_x, water_y = _bbox_size_meters(bbox)
     print("Generating world SDF...")
     sdf_path = generate_world_sdf(
         world_name=args.world_name,
         center_lat=bbox.center_lat,
         center_lon=bbox.center_lon,
         output_dir=args.output_dir,
-        heightmap_info=heightmap_info,
+        heightmap_info=heightmap_result,
         camera_config=camera_config or None,
+        feature_models=feature_sdf,
+        water_size_x=water_x,
+        water_size_y=water_y,
     )
     print(f"  World SDF saved to {sdf_path}")
 
-    # Step 6: Write generation metadata
-    _write_readme(args, bbox, terrain_info, heightmap_info)
+    # Step 7: Write generation metadata
+    _write_readme(args, bbox, first_terrain_info, heightmap_result)
 
     print(f"\nWorld generation complete: {args.output_dir}/")
     print(f"  To launch: GZ_SIM_RESOURCE_PATH={args.output_dir} "
@@ -220,12 +444,23 @@ def _write_readme(args, bbox, terrain_info, heightmap_info):
                 f"{bbox.center_lon:.6f}\n")
         if args.enc_root:
             f.write(f"- **ENC root**: `{args.enc_root}`\n")
-        f.write(f"- **Grid size**: {terrain_info['grid_size']}x"
-                f"{terrain_info['grid_size']}\n")
-        f.write(f"- **Terrain extent**: {terrain_info['size_x']:.0f}m x "
-                f"{terrain_info['size_y']:.0f}m\n")
-        f.write(f"- **Elevation range**: {heightmap_info['min_elevation']:.1f}m "
-                f"to {heightmap_info['max_elevation']:.1f}m\n")
+        if isinstance(heightmap_info, list):
+            f.write(f"- **Tiles**: {len(heightmap_info)}\n")
+            for info in heightmap_info:
+                name = info.get('model_name', 'terrain')
+                f.write(
+                    f"  - {name}: offset "
+                    f"({info.get('pos_x', 0):.0f}, "
+                    f"{info.get('pos_y', 0):.0f})m\n"
+                )
+        else:
+            f.write(f"- **Grid size**: {terrain_info['grid_size']}x"
+                    f"{terrain_info['grid_size']}\n")
+            f.write(f"- **Terrain extent**: {terrain_info['size_x']:.0f}m x "
+                    f"{terrain_info['size_y']:.0f}m\n")
+            min_e = heightmap_info['min_elevation']
+            max_e = heightmap_info['max_elevation']
+            f.write(f"- **Elevation range**: {min_e:.1f}m to {max_e:.1f}m\n")
 
 
 if __name__ == "__main__":
