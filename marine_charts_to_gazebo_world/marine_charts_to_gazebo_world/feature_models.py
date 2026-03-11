@@ -1091,9 +1091,19 @@ def generate_feature_models(
         catslc_skip = _CATSLC_SKIP_NAME.get(sc.catslc)
         if catslc_skip and catslc_skip in skip:
             continue
-        geom_type = sc.geometry.GetGeometryType() & 0xFF
         params = _SLCONS_PARAMS.get(sc.catslc, _SLCONS_DEFAULT)
         height, wall_width, amb, dif = params
+        # Enriched pier: use OSM polygon instead of S57 linestring
+        if sc.osm_geometry is not None:
+            model = _polygon_to_polyline_model(
+                f'slcons_{i:04d}', sc.osm_geometry,
+                center_lat, center_lon, height, z=0.0,
+                ambient=amb, diffuse=dif, collision=_LAND,
+            )
+            if model:
+                shore_constructions.append(model)
+            continue
+        geom_type = sc.geometry.GetGeometryType() & 0xFF
         if geom_type in (2, 5, 7):  # LineString, MultiLineString, Collection
             wall, n_segs = _slcons_wall_model(
                 f'slcons_{i:04d}', sc.geometry,
