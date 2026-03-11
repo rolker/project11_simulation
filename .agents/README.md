@@ -26,7 +26,7 @@ unh_marine_simulation/
 ├── asv_sim_msgs/                      # Service definitions
 │   └── srv/SetPose.srv
 ├── asv_helm/                          # Helm controller (Twist → throttle/rudder)
-│   └── src/asv_helm.cpp
+│   └── src/asv_helm_node.cpp
 ├── vrx_project11/                     # WAM-V platform integration
 │   ├── src/wamv_helm.cpp
 │   ├── launch/                        #   7 launch files (sim, nav, operator)
@@ -47,7 +47,7 @@ unh_marine_simulation/
 
 ## Architecture Overview
 
-The repo provides a two-level simulation architecture:
+The repo provides a three-level simulation architecture:
 
 1. **Physics simulation** (`asv_sim`) — Dynamics engine that models thrust, drag,
    rudder response, and environmental forces (current, wind). Each platform is
@@ -73,10 +73,10 @@ Data flow: `cmd_vel` → helm → `throttle`/`rudder` → `asv_sim` → position
 ## Key Files to Read First
 
 1. `asv_sim/asv_sim/asv_sim_node.py` — Main simulator node; creates platforms from config
-2. `asv_sim/config/ben.yaml` — Example platform configuration showing all parameters
-3. `asv_helm/src/asv_helm.cpp` — Helm controller showing Twist-to-actuator conversion
+2. `asv_sim/config/ben.yaml` — Platform-instance configuration (model reference, frame, initial pose); see `cw4.yaml` for model-level dynamics parameters
+3. `asv_helm/src/asv_helm_node.cpp` — Helm controller showing Twist-to-actuator conversion
 4. `asv_sim_msgs/srv/SetPose.srv` — Service interface for resetting platform position
-5. `marine_simulation/launch/sim_demo.launch` — Example scenario launch combining all components
+5. `marine_simulation/launch/sim_robot_launch.py` — Robot simulation launch file (dynamics, helm, sensors)
 6. `mbes_sim/mbes_sim/mbes_sim.py` — Sonar simulator showing lifecycle node pattern
 
 ## Build & Test
@@ -100,11 +100,11 @@ Known build issues:
 | Package | Depends On | Layer | What It Imports |
 |---------|-----------|-------|-----------------|
 | `asv_helm` | `marine_interfaces` | core | `marine_interfaces/msg/Helm`, `marine_interfaces/msg/Heartbeat` |
-| `asv_helm` | `marine_autonomy` | core | Runtime dependency |
+| `asv_helm` | `marine_autonomy` | core | Build-time (C++ headers, PID controller) and runtime dependency |
 | `vrx_project11` | `marine_interfaces` | core | `marine_interfaces/msg/Heartbeat` |
 | `vrx_project11` | `marine_autonomy` | core | Runtime dependency |
 | `mbes_sim` | `marine_acoustic_msgs` | underlay | `marine_acoustic_msgs/msg/SonarDetections` |
-| `mbes_sim` | `marine_autonomy` | core | `marine_autonomy.robot_navigation` |
+| `mbes_sim` | `marine_autonomy` | core | `marine_autonomy.nav`, `marine_autonomy.geodesic` |
 | `marine_simulation` | `cube_bathymetry` | sensors | Runtime (rviz plugin) |
 
 ## Common Pitfalls
