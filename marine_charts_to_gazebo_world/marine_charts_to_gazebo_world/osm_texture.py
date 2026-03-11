@@ -215,11 +215,6 @@ def rasterize_osm_texture(
         arr[water_mask] = LAND_BASE
         img = Image.fromarray(arr)
 
-    # Flip vertically: our rasterizer puts north at row 0 (top), but
-    # Gazebo OGRE2 heightmap textures have UV (0,0) at the southwest
-    # corner, so pixel (0,0) must be the south edge.
-    img = img.transpose(Image.FLIP_TOP_BOTTOM)
-
     n_features = (len(osm_features.landuse) + len(osm_features.natural)
                   + len(osm_features.parking) + len(osm_features.roads))
     logger.info("Rasterized %d terrain features onto %dx%d texture",
