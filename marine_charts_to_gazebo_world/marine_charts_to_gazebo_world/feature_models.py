@@ -1218,7 +1218,7 @@ def generate_feature_models(
             if wall:
                 marine_models.append(wall)
 
-    # Roads from OSM (flat strips for debugging)
+    # Roads from OSM (dashed debug markers floating above terrain)
     _ROAD_WIDTHS = {
         'motorway': 12.0, 'trunk': 10.0, 'primary': 9.0,
         'secondary': 8.0, 'tertiary': 7.0, 'residential': 6.0,
@@ -1227,17 +1227,71 @@ def generate_feature_models(
     }
     _ROAD_AMB = '0.3 0.3 0.3 1.0'
     _ROAD_DIF = '0.4 0.4 0.4 1.0'
+    _ROAD_DASH_LEN = 5.0    # meters per dash segment
+    _ROAD_DASH_GAP = 50.0   # meters between dash starts
+    _ROAD_HEIGHT = 0.15     # dash thickness
+    _ROAD_Z = 5.0           # float above terrain for debug visibility
     road_models = []
+    road_seg_idx = 0
     for i, road in enumerate(osm_roads or []):
         width = _ROAD_WIDTHS.get(road.highway, 4.0)
-        wall, _ = _slcons_wall_model(
-            f'road_{i:04d}_{road.highway}', road.geometry,
-            center_lat, center_lon,
-            height=0.15, wall_width=width, z=0.1,
-            ambient=_ROAD_AMB, diffuse=_ROAD_DIF, collision=False,
-        )
-        if wall:
-            road_models.append(wall)
+        geom_type = road.geometry.GetGeometryType() & 0xFF
+        lines = []
+        if geom_type == 2:
+            lines = [road.geometry]
+        elif geom_type == 5:
+            lines = [road.geometry.GetGeometryRef(j)
+                     for j in range(road.geometry.GetGeometryCount())]
+        for line in lines:
+            # Walk along the linestring, placing dashes at intervals
+            n = line.GetPointCount()
+            if n < 2:
+                continue
+            # Build ENU points for the line
+            pts = []
+            for pi in range(n):
+                lon, lat = line.GetX(pi), line.GetY(pi)
+                x, y = _latlon_to_enu(lat, lon, center_lat, center_lon)
+                pts.append((x, y))
+            # Walk along cumulative distance, emit dashes
+            dist_since_dash = 0.0
+            for pi in range(len(pts) - 1):
+                x0, y0 = pts[pi]
+                x1, y1 = pts[pi + 1]
+                dx, dy = x1 - x0, y1 - y0
+                seg_len = math.sqrt(dx * dx + dy * dy)
+                if seg_len < 0.1:
+                    continue
+                dist_since_dash += seg_len
+                if dist_since_dash >= _ROAD_DASH_GAP:
+                    dist_since_dash = 0.0
+                    mx = (x0 + x1) / 2.0
+                    my = (y0 + y1) / 2.0
+                    yaw = math.atan2(dy, dx)
+                    dash_len = min(_ROAD_DASH_LEN, seg_len)
+                    road_models.append(
+                        f'    <model name="road_{road_seg_idx:05d}">\n'
+                        f'      <static>true</static>\n'
+                        f'      <pose>{mx:.2f} {my:.2f} '
+                        f'{_ROAD_HEIGHT / 2 + _ROAD_Z:.2f} '
+                        f'0 0 {yaw:.4f}</pose>\n'
+                        f'      <link name="link">\n'
+                        f'        <visual name="visual">\n'
+                        f'          <geometry>\n'
+                        f'            <box>\n'
+                        f'              <size>{dash_len:.2f} {width} '
+                        f'{_ROAD_HEIGHT:.1f}</size>\n'
+                        f'            </box>\n'
+                        f'          </geometry>\n'
+                        f'          <material>\n'
+                        f'            <ambient>{_ROAD_AMB}</ambient>\n'
+                        f'            <diffuse>{_ROAD_DIF}</diffuse>\n'
+                        f'          </material>\n'
+                        f'        </visual>\n'
+                        f'      </link>\n'
+                        f'    </model>'
+                    )
+                    road_seg_idx += 1
 
     # Build grouped container models
     s57_types = {
