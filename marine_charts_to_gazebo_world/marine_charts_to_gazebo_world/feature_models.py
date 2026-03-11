@@ -1095,9 +1095,13 @@ def generate_feature_models(
         height, wall_width, amb, dif = params
         # Enriched pier: use OSM polygon instead of S57 linestring
         if sc.osm_geometry is not None:
+            centroid = sc.osm_geometry.Centroid()
+            cx, cy = _latlon_to_enu(
+                centroid.GetY(), centroid.GetX(), center_lat, center_lon)
+            z = _sample_terrain_elevation(cx, cy, terrain, terrain_bounds)
             model = _polygon_to_polyline_model(
                 f'slcons_{i:04d}', sc.osm_geometry,
-                center_lat, center_lon, height, z=0.0,
+                center_lat, center_lon, 0.5, z=z,
                 ambient=amb, diffuse=dif, collision=_LAND,
             )
             if model:
