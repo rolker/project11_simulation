@@ -474,7 +474,6 @@ def main(argv=None):
             simplify_tolerance=simplify_tol,
             max_wall_segments=args.max_wall_segments,
             osm_man_made=osm_features.man_made if osm_features else None,
-            osm_roads=osm_features.roads if osm_features else None,
         )
         s57_feature_sdf = feature_groups['s57']
         osm_feature_sdf = feature_groups['osm']

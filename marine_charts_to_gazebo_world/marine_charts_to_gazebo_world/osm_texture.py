@@ -116,9 +116,12 @@ def _latlon_to_pixel(lats, lons, ref_lat, ref_lon, tex_size, size_x, size_y,
         np.asarray(lons, dtype=np.float64),
         ref_lat, ref_lon,
     )
-    # ENU origin is at center; map to square texture of tex_size meters
-    px = (east + tex_size / 2) / tex_size * (grid_size - 1)
-    py = (grid_size - 1) - (north + tex_size / 2) / tex_size * (grid_size - 1)
+    # Map ENU to UV coordinates, then to pixels.
+    # Gazebo heightmap UV: U goes [0, size_x/tex_size] west-to-east,
+    # V goes [0, size_y/tex_size] south-to-north.
+    # Image row 0 = top (V=1), row grid_size-1 = bottom (V=0 = south).
+    px = (east + size_x / 2) / tex_size * (grid_size - 1)
+    py = (grid_size - 1) - (north + size_y / 2) / tex_size * (grid_size - 1)
     return list(zip(px.tolist(), py.tolist()))
 
 
