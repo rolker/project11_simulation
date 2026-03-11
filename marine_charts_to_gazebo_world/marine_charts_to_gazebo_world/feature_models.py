@@ -1225,8 +1225,8 @@ def generate_feature_models(
         'unclassified': 5.0, 'service': 4.0, 'track': 3.0,
         'footway': 1.5, 'path': 1.5, 'cycleway': 2.0, 'steps': 1.5,
     }
-    _ROAD_AMB = '0.3 0.3 0.3 1.0'
-    _ROAD_DIF = '0.4 0.4 0.4 1.0'
+    _ROAD_AMB = '0.6 0.5 0.2 1.0'
+    _ROAD_DIF = '0.8 0.7 0.3 1.0'
     _ROAD_DASH_LEN = 5.0    # meters per dash segment
     _ROAD_DASH_GAP = 50.0   # meters between dash starts
     _ROAD_HEIGHT = 0.15     # dash thickness
@@ -1267,13 +1267,15 @@ def generate_feature_models(
                     dist_since_dash = 0.0
                     mx = (x0 + x1) / 2.0
                     my = (y0 + y1) / 2.0
+                    mz = _sample_terrain_elevation(
+                        mx, my, terrain, terrain_bounds)
                     yaw = math.atan2(dy, dx)
                     dash_len = min(_ROAD_DASH_LEN, seg_len)
                     road_models.append(
                         f'    <model name="road_{road_seg_idx:05d}">\n'
                         f'      <static>true</static>\n'
                         f'      <pose>{mx:.2f} {my:.2f} '
-                        f'{_ROAD_HEIGHT / 2 + _ROAD_Z:.2f} '
+                        f'{mz + _ROAD_HEIGHT / 2 + _ROAD_Z:.2f} '
                         f'0 0 {yaw:.4f}</pose>\n'
                         f'      <link name="link">\n'
                         f'        <visual name="visual">\n'
