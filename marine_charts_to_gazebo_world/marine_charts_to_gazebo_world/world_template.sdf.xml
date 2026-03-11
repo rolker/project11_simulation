@@ -237,7 +237,9 @@
       </link>
     </model>
 
-{feature_models}
+{s57_feature_models}
+
+{osm_feature_models}
 
   </world>
 </sdf>

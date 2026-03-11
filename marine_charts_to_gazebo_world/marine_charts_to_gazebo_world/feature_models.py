@@ -854,13 +854,49 @@ def _pylon_model(name, x, y, z, height, collision=True):
     )
 
 
+def _wrap_group(group_name, model_lists):
+    """Wrap non-empty model lists into a nested container model.
+
+    Args:
+        group_name: Name for the top-level container (e.g. 's57_features').
+        model_lists: dict mapping type name to list of model XML strings.
+
+    Returns:
+        SDF string for the container model, or empty string if all empty.
+    """
+    type_groups = []
+    for type_name, models in model_lists.items():
+        if not models:
+            continue
+        inner = '\n'.join(f'  {line}' for m in models for line in m.split('\n'))
+        type_groups.append(
+            f'      <model name="{type_name}">\n'
+            f'{inner}\n'
+            f'      </model>'
+        )
+    if not type_groups:
+        return ''
+    inner_xml = '\n'.join(type_groups)
+    return (
+        f'    <model name="{group_name}">\n'
+        f'      <static>true</static>\n'
+        f'{inner_xml}\n'
+        f'    </model>'
+    )
+
+
 def generate_feature_models(
     features, center_lat, center_lon,
     terrain=None, terrain_bounds=None, debug=False,
     skip_categories=None, simplify_tolerance=0.0,
     max_wall_segments=None,
 ):
-    """Convert S57 features to SDF <model> XML strings.
+    """Convert S57 features to grouped SDF <model> XML strings.
+
+    Features are organized into two top-level container models:
+    ``s57_features`` and ``osm_features``, each containing sub-groups
+    by feature type. This creates a 3-level hierarchy in Gazebo's
+    Entity Tree: source -> feature type -> individual models.
 
     Args:
         features: S57Features instance with extracted chart features.
@@ -879,15 +915,19 @@ def generate_feature_models(
             generation.  0 disables simplification.
 
     Returns:
-        String of SDF <model> elements ready to insert into a world template.
-        Empty string if no features to generate.
+        Dict with 's57' and 'osm' keys, each containing an SDF string
+        for the corresponding container model. Values are empty strings
+        if no features to generate for that source.
     """
-    models = []
     skip = skip_categories or set()
 
     # Land features omit collision geometry — they exist for visual context
     # only and don't need physics interaction with vessels.
     _LAND = False
+
+    # Collect models by type for S57 and OSM sources
+    s57_buildings = []
+    osm_buildings = []
 
     # Buildings (BUISGL, LNDMRK, SILTNK)
     for i, building in enumerate(
@@ -927,9 +967,13 @@ def generate_feature_models(
             ambient=amb, diffuse=dif, collision=_LAND,
         )
         if model:
-            models.append(model)
+            if building.osm_only:
+                osm_buildings.append(model)
+            else:
+                s57_buildings.append(model)
 
     # Pontoons (water surface, z=0)
+    pontoons = []
     for i, pontoon in enumerate(
         features.pontoons if 'pontoons' not in skip else []
     ):
@@ -948,7 +992,7 @@ def generate_feature_models(
                 ambient=amb, diffuse=dif,
             )
             if model:
-                models.append(model)
+                pontoons.append(model)
         elif geom_type in (2, 5, 7):  # LineString, Multi, Collection
             wall, _ = _slcons_wall_model(
                 f'pontoon_{i:04d}', pontoon.geometry,
@@ -957,9 +1001,10 @@ def generate_feature_models(
                 ambient=amb, diffuse=dif,
             )
             if wall:
-                models.append(wall)
+                pontoons.append(wall)
 
     # Bridges (deck at clearance height, not extruded from 0)
+    bridges = []
     for i, bridge in enumerate(
         features.bridges if 'bridges' not in skip else []
     ):
@@ -980,7 +1025,7 @@ def generate_feature_models(
                 ambient=amb, diffuse=dif,
             )
             if model:
-                models.append(model)
+                bridges.append(model)
         elif geom_type in (2, 5, 7):  # LineString, Multi, Collection
             wall, _ = _slcons_wall_model(
                 f'bridge_{i:04d}', bridge.geometry,
@@ -989,16 +1034,18 @@ def generate_feature_models(
                 ambient=amb, diffuse=dif,
             )
             if wall:
-                models.append(wall)
+                bridges.append(wall)
 
     # Buoys (water surface, z=0)
+    buoys = []
     for i, buoy in enumerate(
         features.buoys if 'buoys' not in skip else []
     ):
         x, y = _latlon_to_enu(buoy.lat, buoy.lon, center_lat, center_lon)
-        models.append(_buoy_model(f'buoy_{i:04d}', x, y, buoy.colour))
+        buoys.append(_buoy_model(f'buoy_{i:04d}', x, y, buoy.colour))
 
     # Beacons (on terrain)
+    beacons = []
     for i, beacon in enumerate(
         features.beacons if 'beacons' not in skip else []
     ):
@@ -1006,12 +1053,13 @@ def generate_feature_models(
             beacon.lat, beacon.lon, center_lat, center_lon
         )
         z = _sample_terrain_elevation(x, y, terrain, terrain_bounds)
-        models.append(_beacon_model(
+        beacons.append(_beacon_model(
             f'beacon_{i:04d}', x, y, z=z, colour_code=beacon.colour,
             collision=_LAND,
         ))
 
     # Lights (on terrain)
+    lights = []
     for i, light in enumerate(
         features.lights if 'lights' not in skip else []
     ):
@@ -1019,12 +1067,13 @@ def generate_feature_models(
             light.lat, light.lon, center_lat, center_lon
         )
         z = _sample_terrain_elevation(x, y, terrain, terrain_bounds)
-        models.append(_light_model(f'light_{i:04d}', x, y, z=z,
+        lights.append(_light_model(f'light_{i:04d}', x, y, z=z,
                                    tower_height=light.height,
                                    colour_code=light.colour,
                                    collision=_LAND))
 
     # Shore constructions (SLCONS): line, polygon, and point geometry
+    shore_constructions = []
     wall_seg_remaining = max_wall_segments
     for i, sc in enumerate(
         features.shore_constructions if 'shore_constructions' not in skip
@@ -1048,7 +1097,7 @@ def generate_feature_models(
                 seg_budget=wall_seg_remaining,
             )
             if wall:
-                models.append(wall)
+                shore_constructions.append(wall)
             if wall_seg_remaining is not None:
                 wall_seg_remaining -= n_segs
         elif geom_type in (3, 6):  # Polygon, MultiPolygon
@@ -1058,33 +1107,36 @@ def generate_feature_models(
                 ambient=amb, diffuse=dif, collision=_LAND,
             )
             if model:
-                models.append(model)
+                shore_constructions.append(model)
         elif geom_type == 1:  # Point
             x, y = _latlon_to_enu(
                 sc.geometry.GetY(), sc.geometry.GetX(),
                 center_lat, center_lon,
             )
-            models.append(_slcons_point_model(f'slcons_{i:04d}', x, y,
-                                               collision=_LAND))
+            shore_constructions.append(_slcons_point_model(
+                f'slcons_{i:04d}', x, y, collision=_LAND))
 
     # Piles (at water level)
+    piles = []
     for i, pile in enumerate(
         features.piles if 'piles' not in skip else []
     ):
         x, y = _latlon_to_enu(pile.lat, pile.lon, center_lat, center_lon)
-        models.append(_pile_model(f'pile_{i:04d}', x, y))
+        piles.append(_pile_model(f'pile_{i:04d}', x, y))
 
     # Mooring facilities
+    mooring_facilities = []
     for i, mf in enumerate(
         features.mooring_facilities if 'mooring_facilities' not in skip
         else []
     ):
         x, y = _latlon_to_enu(mf.lat, mf.lon, center_lat, center_lon)
         z = _sample_terrain_elevation(x, y, terrain, terrain_bounds)
-        models.append(_morfac_model(f'morfac_{i:04d}', x, y, z, mf.catmor,
-                                    collision=_LAND))
+        mooring_facilities.append(_morfac_model(
+            f'morfac_{i:04d}', x, y, z, mf.catmor, collision=_LAND))
 
     # Cranes (on terrain)
+    cranes = []
     for i, crane in enumerate(
         features.cranes if 'cranes' not in skip else []
     ):
@@ -1092,12 +1144,13 @@ def generate_feature_models(
             crane.lat, crane.lon, center_lat, center_lon
         )
         z = _sample_terrain_elevation(x, y, terrain, terrain_bounds)
-        models.append(_crane_model(
+        cranes.append(_crane_model(
             f'crane_{i:04d}', x, y, z, crane.catcrn, crane.height,
             collision=_LAND,
         ))
 
     # Pylons (on terrain)
+    pylons = []
     for i, pylon in enumerate(
         features.pylons if 'pylons' not in skip else []
     ):
@@ -1105,12 +1158,13 @@ def generate_feature_models(
             pylon.lat, pylon.lon, center_lat, center_lon
         )
         z = _sample_terrain_elevation(x, y, terrain, terrain_bounds)
-        models.append(_pylon_model(
+        pylons.append(_pylon_model(
             f'pylon_{i:04d}', x, y, z, pylon.height,
             collision=_LAND,
         ))
 
     # Debug: coastline walls (simplified to reduce segment count)
+    coastlines = []
     if debug and features.coastlines:
         for i, coastline in enumerate(features.coastlines):
             tol = simplify_tolerance if simplify_tolerance > 0 else 0.0002
@@ -1120,9 +1174,28 @@ def generate_feature_models(
                 center_lat, center_lon,
             )
             if wall:
-                models.append(wall)
+                coastlines.append(wall)
 
-    if not models:
-        return ''
+    # Build grouped container models
+    s57_types = {
+        'buildings': s57_buildings,
+        'pontoons': pontoons,
+        'bridges': bridges,
+        'buoys': buoys,
+        'beacons': beacons,
+        'lights': lights,
+        'shore_constructions': shore_constructions,
+        'piles': piles,
+        'mooring_facilities': mooring_facilities,
+        'cranes': cranes,
+        'pylons': pylons,
+        'coastlines': coastlines,
+    }
+    osm_types = {
+        'buildings': osm_buildings,
+    }
 
-    return '\n\n'.join(models)
+    return {
+        's57': _wrap_group('s57_features', s57_types),
+        'osm': _wrap_group('osm_features', osm_types),
+    }

@@ -430,7 +430,8 @@ def main(argv=None):
         heightmap_result = heightmap_info
 
     # Step 5: Generate feature models (optional)
-    feature_sdf = ""
+    s57_feature_sdf = ""
+    osm_feature_sdf = ""
     skip_categories = set()
     if args.skip_categories:
         skip_categories = {c.strip() for c in args.skip_categories.split(',')}
@@ -456,8 +457,8 @@ def main(argv=None):
         }
 
     if not args.no_features and s57_features is not None:
-        print("Generating S57 feature models...")
-        feature_sdf = generate_feature_models(
+        print("Generating feature models...")
+        feature_groups = generate_feature_models(
             s57_features, ref_lat, ref_lon,
             terrain=first_terrain, terrain_bounds=terrain_bounds,
             debug=args.debug_features,
@@ -465,8 +466,11 @@ def main(argv=None):
             simplify_tolerance=simplify_tol,
             max_wall_segments=args.max_wall_segments,
         )
-        if feature_sdf:
-            n_models = feature_sdf.count("<model name=")
+        s57_feature_sdf = feature_groups['s57']
+        osm_feature_sdf = feature_groups['osm']
+        total = s57_feature_sdf + osm_feature_sdf
+        if total:
+            n_models = total.count("<model name=")
             print(f"  Generated {n_models} feature models")
         else:
             print("  No placeable features found")
@@ -487,7 +491,8 @@ def main(argv=None):
         output_dir=args.output_dir,
         heightmap_info=heightmap_result,
         camera_config=camera_config or None,
-        feature_models=feature_sdf,
+        s57_feature_models=s57_feature_sdf,
+        osm_feature_models=osm_feature_sdf,
         water_size_x=water_x,
         water_size_y=water_y,
     )

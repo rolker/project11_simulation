@@ -128,7 +128,8 @@ def generate_world_sdf(
     output_dir: str,
     heightmap_info,
     camera_config: dict = None,
-    feature_models: str = "",
+    s57_feature_models: str = "",
+    osm_feature_models: str = "",
     water_size_x: float = 0.0,
     water_size_y: float = 0.0,
 ) -> str:
@@ -141,7 +142,7 @@ def generate_world_sdf(
     - Terrain heightmap model(s)
     - Semi-transparent water surface plane
     - Scene with sky and lighting
-    - Optional S57 chart feature models (buildings, buoys, etc.)
+    - Optional S57/OSM chart feature models (buildings, buoys, etc.)
 
     Args:
         world_name: Name for the world (used in filename and SDF).
@@ -151,7 +152,8 @@ def generate_world_sdf(
         heightmap_info: dict from terrain_to_heightmap() for single tile,
             or list of dicts for multi-tile.
         camera_config: optional dict with camera overrides (see _compute_camera).
-        feature_models: SDF model XML strings for S57 features (default empty).
+        s57_feature_models: SDF XML for S57-sourced features (default empty).
+        osm_feature_models: SDF XML for OSM-sourced features (default empty).
         water_size_x: Override water plane width (meters). If 0, uses
             heightmap_info size.
         water_size_y: Override water plane height (meters). If 0, uses
@@ -189,7 +191,8 @@ def generate_world_sdf(
         terrain_includes=terrain_includes,
         camera_pose=camera_pose,
         camera_far=camera_far,
-        feature_models=feature_models,
+        s57_feature_models=s57_feature_models,
+        osm_feature_models=osm_feature_models,
     )
 
     sdf_path = os.path.join(output_dir, f"{world_name}.sdf")
