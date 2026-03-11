@@ -166,35 +166,14 @@ def match_and_enrich(
 
 # --- Pier matching ---
 
-# Maximum centroid distance for pier matching (~400m at mid-latitudes).
-# Piers are large features; S57 linestrings may be individual edges
-# whose centroids are far from the OSM polygon centroid.
-_MAX_PIER_CENTROID_DISTANCE_DEG = 0.004
+# Maximum distance (degrees) between an S57 pier linestring and an OSM
+# pier polygon to consider them the same physical feature.
+# ~5m ≈ 0.00005 degrees at mid-latitudes.
+_MAX_PIER_DISTANCE_DEG = 0.00005
 
-# Buffer around S57 linestring (~2m in degrees) to create an area for overlap.
-_PIER_LINE_BUFFER_DEG = 0.00002
-
-# Minimum fraction of the buffered S57 line that must fall inside the OSM
-# polygon to accept a match.  S57 pier lines run along polygon edges,
-# so only ~half the buffer falls inside — 0.1 captures real matches.
-_MIN_PIER_OVERLAP = 0.1
-
-
-def _line_polygon_overlap(line: ogr.Geometry, polygon: ogr.Geometry) -> float:
-    """Fraction of a buffered linestring that overlaps with a polygon."""
-    try:
-        buffered = line.Buffer(_PIER_LINE_BUFFER_DEG)
-        if buffered is None or buffered.IsEmpty():
-            return 0.0
-        buffered_area = buffered.GetArea()
-        if buffered_area == 0.0:
-            return 0.0
-        intersection = buffered.Intersection(polygon)
-        if intersection is None or intersection.IsEmpty():
-            return 0.0
-        return intersection.GetArea() / buffered_area
-    except Exception:
-        return 0.0
+# Coarse centroid filter to avoid expensive Distance() calls.
+# ~500m at mid-latitudes.
+_MAX_PIER_CENTROID_DISTANCE_DEG = 0.005
 
 
 def match_piers(
@@ -204,10 +183,15 @@ def match_piers(
 ) -> tuple:
     """Match S57 SLCONS piers to OSM man_made=pier polygons.
 
-    For each S57 SLCONS with catslc=4 (pier/jetty), finds the best OSM
-    pier polygon match using centroid proximity and buffered-line overlap.
-    When matched, stores the OSM polygon as ``osm_geometry`` on the
-    ShoreCon for polygon rendering.
+    S57 piers are typically linestrings that run along the edges of the
+    physical pier.  Multiple linestrings may represent the same pier.
+    OSM has polygon outlines for the full pier footprint.
+
+    This function uses **proximity matching**: an S57 pier linestring is
+    matched to an OSM pier polygon when the geometry distance is less
+    than ~5m.  All matched linestrings get the OSM polygon stored as
+    ``osm_geometry``; the renderer uses that polygon instead of wall
+    segments.
 
     When *add_unmatched* is True, unmatched OSM pier polygons are added
     as new ShoreCon objects with ``osm_only=True``.
@@ -235,32 +219,38 @@ def match_piers(
     for sc in s57_features.shore_constructions:
         if sc.catslc != 4:
             continue
-        # Only match linestring S57 piers (polygons are already good)
+        # Only match linestring S57 piers (polygons already render fine)
         geom_type = sc.geometry.GetGeometryType() & 0xFF
         if geom_type not in (2, 5, 7):  # LineString, MultiLineString, Collection
             continue
 
-        best_overlap = 0.0
+        best_dist = _MAX_PIER_DISTANCE_DEG
         best_osm_idx = -1
         best_osm_geom = None
 
         for osm_idx, osm_mm in osm_piers:
-            dist = _centroid_distance_deg(sc.geometry, osm_mm.geometry)
-            if dist > _MAX_PIER_CENTROID_DISTANCE_DEG:
+            # Coarse centroid filter
+            cdist = _centroid_distance_deg(sc.geometry, osm_mm.geometry)
+            if cdist > _MAX_PIER_CENTROID_DISTANCE_DEG:
                 continue
 
-            overlap = _line_polygon_overlap(sc.geometry, osm_mm.geometry)
-            if overlap > best_overlap:
-                best_overlap = overlap
+            try:
+                dist = sc.geometry.Distance(osm_mm.geometry)
+            except Exception:
+                continue
+
+            if dist < best_dist:
+                best_dist = dist
                 best_osm_idx = osm_idx
                 best_osm_geom = osm_mm.geometry
 
-        if best_osm_geom is not None and best_overlap >= _MIN_PIER_OVERLAP:
+        if best_osm_geom is not None:
             matched_osm_indices.add(best_osm_idx)
             sc.osm_geometry = best_osm_geom.Clone()
             n_matched += 1
             logger.debug(
-                "Matched S57 pier to OSM pier (overlap=%.2f)", best_overlap,
+                "Matched S57 pier to OSM pier (dist=%.6f deg)",
+                best_dist,
             )
 
     # Add unmatched OSM piers as new ShoreCon objects
