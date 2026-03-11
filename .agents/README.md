@@ -38,8 +38,8 @@ unh_marine_simulation/
 ├── marine_charts_to_gazebo_world/     # Chart-to-Gazebo converter
 │   └── marine_charts_to_gazebo_world/ #   generate_world, s57_reader, terrain, heightmap, ...
 ├── portsmouth_nh_gazebo/              # Portsmouth NH Gazebo world
-│   ├── config/portsmouth.yaml
-│   └── launch/gazebo_launch.py
+│   ├── config/                        #   portsmouth.yaml, isles_of_shoals.yaml, ...
+│   └── launch/                        #   harbor_launch.py, isles_of_shoals_launch.py, ...
 └── marine_simulation/                 # Scenario launch files
     ├── launch/                        #   sim_test, sim_demo, sim_drix, ...
     └── config/                        #   bob_platform.yaml, udp_bridge.yaml
@@ -92,7 +92,7 @@ source ../../../.agent/scripts/setup.bash && colcon test --packages-select asv_s
 Known build issues:
 - `mbes_sim` includes a 69 MB bathymetry TIFF (`data/US5NH02M.tiff`); initial clone is large
 - `marine_charts_to_gazebo_world` requires GDAL (`python3-gdal`) and may fail to build if GDAL headers are missing
-- `portsmouth_nh_gazebo` downloads ETOPO data on first launch and caches it in `~/.cache/portsmouth_nh_gazebo/`
+- `portsmouth_nh_gazebo` downloads ETOPO data on first launch and caches it in `~/.cache/marine_charts_to_gazebo_world/`
 - `vrx_project11` depends on `marine_interfaces` and `marine_autonomy` from the core layer
 
 ## Cross-Layer Dependencies
