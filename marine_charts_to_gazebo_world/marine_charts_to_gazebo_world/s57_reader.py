@@ -130,6 +130,8 @@ class ShoreCon:
     geometry: ogr.Geometry  # Line, Polygon, or Point in WGS84
     catslc: int = 0  # CATSLC category (1=breakwater, 4=pier, etc.)
     watlev: int = 0  # WATLEV water level (2=always dry, 4=covers/uncovers)
+    osm_geometry: Optional[ogr.Geometry] = None  # polygon from OSM match
+    osm_only: bool = False  # True if from OSM with no S57 match
 
 
 @dataclass
