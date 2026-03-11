@@ -86,6 +86,7 @@ class Building:
     osm_height: Optional[float] = None  # from OSM height or levels*3
     osm_material: str = ''  # from OSM building:material
     osm_colour: str = ''  # from OSM building:colour
+    osm_only: bool = False  # True if building came from OSM with no S57 match
 
 
 @dataclass

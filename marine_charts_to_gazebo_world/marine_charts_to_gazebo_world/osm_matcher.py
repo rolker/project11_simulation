@@ -150,6 +150,7 @@ def match_and_enrich(
             osm_height=osm_height,
             osm_material=osm_building.material,
             osm_colour=osm_building.colour,
+            osm_only=True,
         ))
         n_added += 1
 

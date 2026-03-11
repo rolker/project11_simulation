@@ -38,6 +38,13 @@ CENTER_LAT = 43.075
 CENTER_LON = -70.71
 
 
+def _all_features_sdf(features, *args, **kwargs):
+    """Call generate_feature_models and join s57+osm output."""
+    result = generate_feature_models(features, *args, **kwargs)
+    parts = [v for v in (result['s57'], result['osm']) if v]
+    return '\n\n'.join(parts)
+
+
 def _make_polygon(coords):
     """Create an OGR polygon from a list of (lon, lat) tuples."""
     ring = ogr.Geometry(ogr.wkbLinearRing)
@@ -78,10 +85,10 @@ class TestLatLonToEnu:
 class TestGenerateFeatureModelsEmpty:
 
     def test_empty_features(self):
-        """Empty features should return empty string."""
+        """Empty features should return dict with empty strings."""
         features = S57Features()
         result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
-        assert result == ''
+        assert result == {'s57': '', 'osm': ''}
 
 
 class TestBuildingModel:
@@ -95,14 +102,15 @@ class TestBuildingModel:
             (-70.711, 43.077),
         ])
         features = S57Features(buildings=[Building(geometry=poly, objl=12)])
-        result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
+        result = _all_features_sdf(features, CENTER_LAT, CENTER_LON)
         assert '<model name="building_0000">' in result
         assert '<polyline>' in result
         assert '<height>5.0</height>' in result
-        # Should be valid XML when wrapped
+        # Should be valid XML when wrapped — building is nested inside
+        # s57_features/buildings container
         root = ET.fromstring(f'<root>{result}</root>')
-        models = root.findall('model')
-        assert len(models) == 1
+        buildings = root.findall('.//model[@name="building_0000"]')
+        assert len(buildings) == 1
 
     def test_landmark_height(self):
         """LNDMRK (OBJL 73) should use 12.0m height."""
@@ -113,7 +121,7 @@ class TestBuildingModel:
             (-70.711, 43.077),
         ])
         features = S57Features(buildings=[Building(geometry=poly, objl=73)])
-        result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
+        result = _all_features_sdf(features, CENTER_LAT, CENTER_LON)
         assert '<height>12.0</height>' in result
 
     def test_silo_height(self):
@@ -125,7 +133,7 @@ class TestBuildingModel:
             (-70.711, 43.077),
         ])
         features = S57Features(buildings=[Building(geometry=poly, objl=119)])
-        result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
+        result = _all_features_sdf(features, CENTER_LAT, CENTER_LON)
         assert '<height>8.0</height>' in result
 
 
@@ -143,7 +151,7 @@ class TestBuildingObjnam:
             buildings=[Building(geometry=poly, objl=12,
                                 objnam='Coast Guard Station')]
         )
-        result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
+        result = _all_features_sdf(features, CENTER_LAT, CENTER_LON)
         assert '<model name="building_0000_coast_guard_station">' in result
 
     def test_empty_objnam_uses_default(self):
@@ -157,7 +165,7 @@ class TestBuildingObjnam:
         features = S57Features(
             buildings=[Building(geometry=poly, objl=12, objnam='')]
         )
-        result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
+        result = _all_features_sdf(features, CENTER_LAT, CENTER_LON)
         assert '<model name="building_0000">' in result
 
     def test_special_chars_sanitized(self):
@@ -172,7 +180,7 @@ class TestBuildingObjnam:
             buildings=[Building(geometry=poly, objl=12,
                                 objnam='Bldg #42 (Main)')]
         )
-        result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
+        result = _all_features_sdf(features, CENTER_LAT, CENTER_LON)
         assert '<model name="building_0000_bldg_42_main">' in result
 
 
@@ -203,7 +211,7 @@ class TestPontoonModel:
             (-70.711, 43.077),
         ])
         features = S57Features(pontoons=[Pontoon(geometry=poly)])
-        result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
+        result = _all_features_sdf(features, CENTER_LAT, CENTER_LON)
         assert '<model name="pontoon_0000">' in result
         assert '<height>1.0</height>' in result
 
@@ -221,7 +229,7 @@ class TestBridgeModel:
         features = S57Features(
             bridges=[Bridge(geometry=poly, clearance=15.0)]
         )
-        result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
+        result = _all_features_sdf(features, CENTER_LAT, CENTER_LON)
         assert '<model name="bridge_0000">' in result
         # Deck thickness is 1.0m, placed at z=15.0
         assert '<height>1.0</height>' in result
@@ -236,7 +244,7 @@ class TestBridgeModel:
             (-70.711, 43.077),
         ])
         features = S57Features(bridges=[Bridge(geometry=poly, clearance=0.0)])
-        result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
+        result = _all_features_sdf(features, CENTER_LAT, CENTER_LON)
         # Deck at z=10.0 with 1.0m thickness
         assert '<height>1.0</height>' in result
         assert '10.00 0 0 0' in result
@@ -249,19 +257,19 @@ class TestBuoyModel:
         features = S57Features(
             buoys=[Buoy(lat=43.076, lon=-70.711, colour=3)]
         )
-        result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
+        result = _all_features_sdf(features, CENTER_LAT, CENTER_LON)
         assert '<model name="buoy_0000">' in result
         assert '<cylinder>' in result
         assert '<cone>' in result
         root = ET.fromstring(f'<root>{result}</root>')
-        assert len(root.findall('model')) == 1
+        assert len(root.findall('.//model[@name="buoy_0000"]')) == 1
 
     def test_buoy_red_colour(self):
         """Buoy with COLOUR=3 (red) should have red material."""
         features = S57Features(
             buoys=[Buoy(lat=43.076, lon=-70.711, colour=3)]
         )
-        result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
+        result = _all_features_sdf(features, CENTER_LAT, CENTER_LON)
         # Red: 1.0 0.0 0.0
         assert '1.0 0.0 0.0 1.0' in result
 
@@ -270,7 +278,7 @@ class TestBuoyModel:
         features = S57Features(
             buoys=[Buoy(lat=43.076, lon=-70.711, colour=4)]
         )
-        result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
+        result = _all_features_sdf(features, CENTER_LAT, CENTER_LON)
         assert '0.0 0.8 0.0 1.0' in result
 
     def test_buoy_unknown_colour_defaults_yellow(self):
@@ -278,7 +286,7 @@ class TestBuoyModel:
         features = S57Features(
             buoys=[Buoy(lat=43.076, lon=-70.711, colour=99)]
         )
-        result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
+        result = _all_features_sdf(features, CENTER_LAT, CENTER_LON)
         assert '1.0 1.0 0.0 1.0' in result
 
 
@@ -289,11 +297,11 @@ class TestBeaconModel:
         features = S57Features(
             beacons=[Beacon(lat=43.076, lon=-70.711)]
         )
-        result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
+        result = _all_features_sdf(features, CENTER_LAT, CENTER_LON)
         assert '<model name="beacon_0000">' in result
         assert '<cylinder>' in result
         root = ET.fromstring(f'<root>{result}</root>')
-        assert len(root.findall('model')) == 1
+        assert len(root.findall('.//model[@name="beacon_0000"]')) == 1
 
 
 class TestLightModel:
@@ -303,12 +311,12 @@ class TestLightModel:
         features = S57Features(
             lights=[Light(lat=43.076, lon=-70.711)]
         )
-        result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
+        result = _all_features_sdf(features, CENTER_LAT, CENTER_LON)
         assert '<model name="light_0000">' in result
         assert '<cylinder>' in result
         assert '<sphere>' in result
         root = ET.fromstring(f'<root>{result}</root>')
-        assert len(root.findall('model')) == 1
+        assert len(root.findall('.//model[@name="light_0000"]')) == 1
 
 
 class TestMultipleFeatures:
@@ -326,9 +334,12 @@ class TestMultipleFeatures:
             buoys=[Buoy(lat=43.076, lon=-70.711, colour=3)],
             lights=[Light(lat=43.076, lon=-70.712)],
         )
-        result = generate_feature_models(features, CENTER_LAT, CENTER_LON)
+        result = _all_features_sdf(features, CENTER_LAT, CENTER_LON)
         assert 'building_0000' in result
         assert 'buoy_0000' in result
         assert 'light_0000' in result
         root = ET.fromstring(f'<root>{result}</root>')
-        assert len(root.findall('model')) == 3
+        # Top-level container is s57_features; individual features are nested
+        assert len(root.findall('.//model[@name="building_0000"]')) == 1
+        assert len(root.findall('.//model[@name="buoy_0000"]')) == 1
+        assert len(root.findall('.//model[@name="light_0000"]')) == 1

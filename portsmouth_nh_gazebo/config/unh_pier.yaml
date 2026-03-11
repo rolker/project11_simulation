@@ -1,0 +1,13 @@
+bounds:
+  south: 43.069694
+  west: -70.7148459
+  north: 43.0727356
+  east: -70.7067844
+
+world_name: portsmouth_nh_unh_pier
+
+grid_power: 10   # 1025x1025 (~0.35 m/cell for this small area)
+
+osm: true
+# No skip_categories — show all features
+# No no_osm_buildings — include OSM-only buildings too
