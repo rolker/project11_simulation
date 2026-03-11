@@ -45,6 +45,10 @@ _S57_COLOURS = {
     6: (1.0, 1.0, 0.0),    # yellow
 }
 
+# Default building colors by source (ambient, diffuse)
+_DEFAULT_S57_BUILDING_COLORS = ('0.6 0.6 0.55 1.0', '0.7 0.7 0.65 1.0')  # warm beige
+_DEFAULT_OSM_BUILDING_COLORS = ('0.55 0.58 0.62 1.0', '0.65 0.68 0.72 1.0')  # cool gray-blue
+
 # OSM building:material -> (ambient, diffuse) SDF color strings
 _OSM_MATERIAL_COLORS = {
     'brick':    ('0.6 0.3 0.2 1.0', '0.7 0.4 0.3 1.0'),
@@ -111,8 +115,8 @@ def _osm_material_to_colors(material: str, colour: str):
         if result is not None:
             return result
 
-    # Default building colors
-    return '0.6 0.6 0.55 1.0', '0.7 0.7 0.65 1.0'
+    # Default OSM building colors (callers with S57 data use their own default)
+    return _DEFAULT_OSM_BUILDING_COLORS
 
 
 def _sanitize_objnam(objnam: str) -> str:
@@ -952,9 +956,10 @@ def generate_feature_models(
                 amb, dif = _osm_material_to_colors(
                     building.osm_material, building.osm_colour,
                 )
+            elif building.osm_only:
+                amb, dif = _DEFAULT_OSM_BUILDING_COLORS
             else:
-                amb = '0.6 0.6 0.55 1.0'
-                dif = '0.7 0.7 0.65 1.0'
+                amb, dif = _DEFAULT_S57_BUILDING_COLORS
         # Include OBJNAM in model name if available
         name = f'building_{i:04d}'
         if building.objnam:
