@@ -166,15 +166,18 @@ def match_and_enrich(
 
 # --- Pier matching ---
 
-# Maximum centroid distance for pier matching (~100m at mid-latitudes).
-_MAX_PIER_CENTROID_DISTANCE_DEG = 0.0009
+# Maximum centroid distance for pier matching (~400m at mid-latitudes).
+# Piers are large features; S57 linestrings may be individual edges
+# whose centroids are far from the OSM polygon centroid.
+_MAX_PIER_CENTROID_DISTANCE_DEG = 0.004
 
 # Buffer around S57 linestring (~2m in degrees) to create an area for overlap.
 _PIER_LINE_BUFFER_DEG = 0.00002
 
 # Minimum fraction of the buffered S57 line that must fall inside the OSM
-# polygon to accept a match.
-_MIN_PIER_OVERLAP = 0.3
+# polygon to accept a match.  S57 pier lines run along polygon edges,
+# so only ~half the buffer falls inside — 0.1 captures real matches.
+_MIN_PIER_OVERLAP = 0.1
 
 
 def _line_polygon_overlap(line: ogr.Geometry, polygon: ogr.Geometry) -> float:
