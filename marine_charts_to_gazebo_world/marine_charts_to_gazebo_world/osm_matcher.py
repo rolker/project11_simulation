@@ -181,24 +181,20 @@ def match_piers(
     osm_features: OsmFeatures,
     add_unmatched: bool = True,
 ) -> tuple:
-    """Match S57 SLCONS piers to OSM man_made=pier polygons.
+    """Replace S57 SLCONS pier features with OSM man_made=pier polygons.
 
-    S57 piers are typically linestrings that run along the edges of the
-    physical pier.  Multiple linestrings may represent the same pier.
-    OSM has polygon outlines for the full pier footprint.
-
-    This function uses **proximity matching**: an S57 pier linestring is
-    matched to an OSM pier polygon when the geometry distance is less
-    than ~5m.  All matched linestrings get the OSM polygon stored as
-    ``osm_geometry``; the renderer uses that polygon instead of wall
-    segments.
+    S57 represents piers as a combination of polygon features and edge
+    linestrings.  OSM has single polygon outlines for each pier.
+    This function finds all S57 pier features (catslc=4) within ~5m of
+    each OSM pier polygon and replaces them with a single ShoreCon
+    carrying the OSM polygon.
 
     When *add_unmatched* is True, unmatched OSM pier polygons are added
-    as new ShoreCon objects with ``osm_only=True``.
+    as new ShoreCon objects.
 
     Returns:
-        Tuple of (enriched S57Features, n_matched, n_added, set of
-        matched OSM man_made indices).
+        Tuple of (enriched S57Features, n_s57_replaced, n_osm_added,
+        set of matched OSM man_made indices).
     """
     # Collect OSM pier polygons (with their index into osm_features.man_made)
     osm_piers = []
@@ -214,21 +210,20 @@ def match_piers(
         return s57_features, 0, 0, set()
 
     matched_osm_indices = set()
-    n_matched = 0
+    suppress_sc_indices = set()  # S57 shore_constructions indices to remove
+    replacements = []  # OSM polygons to add as replacements
+    n_replaced = 0
 
-    for sc in s57_features.shore_constructions:
-        if sc.catslc != 4:
-            continue
-        # Only match linestring S57 piers (polygons already render fine)
-        geom_type = sc.geometry.GetGeometryType() & 0xFF
-        if geom_type not in (2, 5, 7):  # LineString, MultiLineString, Collection
-            continue
+    # For each OSM pier polygon, find ALL nearby S57 pier features
+    for osm_idx, osm_mm in osm_piers:
+        matched_any = False
 
-        best_dist = _MAX_PIER_DISTANCE_DEG
-        best_osm_idx = -1
-        best_osm_geom = None
+        for sc_idx, sc in enumerate(s57_features.shore_constructions):
+            if sc.catslc != 4:
+                continue
+            if sc_idx in suppress_sc_indices:
+                continue
 
-        for osm_idx, osm_mm in osm_piers:
             # Coarse centroid filter
             cdist = _centroid_distance_deg(sc.geometry, osm_mm.geometry)
             if cdist > _MAX_PIER_CENTROID_DISTANCE_DEG:
@@ -239,19 +234,30 @@ def match_piers(
             except Exception:
                 continue
 
-            if dist < best_dist:
-                best_dist = dist
-                best_osm_idx = osm_idx
-                best_osm_geom = osm_mm.geometry
+            if dist < _MAX_PIER_DISTANCE_DEG:
+                suppress_sc_indices.add(sc_idx)
+                matched_any = True
+                n_replaced += 1
+                logger.debug(
+                    "Suppressing S57 pier [%d] for OSM pier (dist=%.6f)",
+                    sc_idx, dist,
+                )
 
-        if best_osm_geom is not None:
-            matched_osm_indices.add(best_osm_idx)
-            sc.osm_geometry = best_osm_geom.Clone()
-            n_matched += 1
-            logger.debug(
-                "Matched S57 pier to OSM pier (dist=%.6f deg)",
-                best_dist,
-            )
+        if matched_any:
+            matched_osm_indices.add(osm_idx)
+            replacements.append(ShoreCon(
+                geometry=osm_mm.geometry.Clone(),
+                catslc=4,
+                osm_only=True,
+            ))
+
+    # Remove suppressed S57 features and add OSM replacements
+    if suppress_sc_indices:
+        s57_features.shore_constructions = [
+            sc for idx, sc in enumerate(s57_features.shore_constructions)
+            if idx not in suppress_sc_indices
+        ]
+    s57_features.shore_constructions.extend(replacements)
 
     # Add unmatched OSM piers as new ShoreCon objects
     n_added = 0
@@ -266,4 +272,4 @@ def match_piers(
             ))
             n_added += 1
 
-    return s57_features, n_matched, n_added, matched_osm_indices
+    return s57_features, n_replaced, n_added, matched_osm_indices

@@ -1093,20 +1093,6 @@ def generate_feature_models(
             continue
         params = _SLCONS_PARAMS.get(sc.catslc, _SLCONS_DEFAULT)
         height, wall_width, amb, dif = params
-        # Enriched pier: use OSM polygon instead of S57 linestring
-        if sc.osm_geometry is not None:
-            centroid = sc.osm_geometry.Centroid()
-            cx, cy = _latlon_to_enu(
-                centroid.GetY(), centroid.GetX(), center_lat, center_lon)
-            z = _sample_terrain_elevation(cx, cy, terrain, terrain_bounds)
-            model = _polygon_to_polyline_model(
-                f'slcons_{i:04d}', sc.osm_geometry,
-                center_lat, center_lon, 0.5, z=z,
-                ambient=amb, diffuse=dif, collision=_LAND,
-            )
-            if model:
-                shore_constructions.append(model)
-            continue
         geom_type = sc.geometry.GetGeometryType() & 0xFF
         if geom_type in (2, 5, 7):  # LineString, MultiLineString, Collection
             wall, n_segs = _slcons_wall_model(
@@ -1121,9 +1107,13 @@ def generate_feature_models(
             if wall_seg_remaining is not None:
                 wall_seg_remaining -= n_segs
         elif geom_type in (3, 6):  # Polygon, MultiPolygon
+            centroid = sc.geometry.Centroid()
+            cx, cy = _latlon_to_enu(
+                centroid.GetY(), centroid.GetX(), center_lat, center_lon)
+            z = _sample_terrain_elevation(cx, cy, terrain, terrain_bounds)
             model = _polygon_to_polyline_model(
                 f'slcons_{i:04d}', sc.geometry,
-                center_lat, center_lon, height, z=0.0,
+                center_lat, center_lon, height, z=z,
                 ambient=amb, diffuse=dif, collision=_LAND,
             )
             if model:
