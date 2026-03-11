@@ -95,6 +95,14 @@ class OsmNatural:
 
 
 @dataclass
+class OsmManMade:
+    """A man-made marine infrastructure feature from OpenStreetMap."""
+
+    geometry: ogr.Geometry  # Polygon or LineString in WGS84
+    man_made: str = ''  # e.g. pier, quay, breakwater, groyne
+
+
+@dataclass
 class OsmFeatures:
     """Collection of features fetched from OpenStreetMap."""
 
@@ -103,11 +111,12 @@ class OsmFeatures:
     roads: List[OsmRoad] = field(default_factory=list)
     parking: List[OsmParking] = field(default_factory=list)
     natural: List[OsmNatural] = field(default_factory=list)
+    man_made: List[OsmManMade] = field(default_factory=list)
 
 
 def _cache_key(bbox: BoundingBox, terrain: bool = False) -> str:
     """Generate a deterministic cache key from bbox."""
-    prefix = "osm_terrain" if terrain else "osm"
+    prefix = "osm_terrain_v2" if terrain else "osm"
     s = f"{prefix}:{bbox.south:.6f},{bbox.west:.6f},{bbox.north:.6f},{bbox.east:.6f}"
     return hashlib.md5(s.encode()).hexdigest()
 
@@ -125,7 +134,7 @@ def _build_overpass_query(bbox: BoundingBox,
             ");\n"
             "out geom;\n"
         )
-    # Combined query: buildings + landuse + roads + parking + natural
+    # Combined query: buildings + landuse + roads + parking + natural + marine
     return (
         "[out:json][timeout:120];\n"
         "(\n"
@@ -135,6 +144,8 @@ def _build_overpass_query(bbox: BoundingBox,
         f'  way["highway"]({b});\n'
         f'  way["amenity"="parking"]({b});\n'
         f'  way["natural"]({b});\n'
+        f'  way["man_made"~"pier|quay|breakwater|groyne"]({b});\n'
+        f'  way["waterway"="dock"]({b});\n'
         ");\n"
         "out geom;\n"
     )
@@ -278,6 +289,32 @@ def _parse_terrain_element(element: dict, features: OsmFeatures):
             features.natural.append(OsmNatural(
                 geometry=polygon,
                 natural=tags.get("natural", ""),
+            ))
+        return
+
+    # Marine infrastructure (man_made: pier, quay, breakwater, groyne)
+    man_made_type = tags.get("man_made", "")
+    if man_made_type in ("pier", "quay", "breakwater", "groyne"):
+        # Try polygon first, fall back to linestring
+        polygon = _coords_to_polygon(geom_coords)
+        if polygon is not None and polygon.IsValid():
+            features.man_made.append(OsmManMade(
+                geometry=polygon, man_made=man_made_type,
+            ))
+        else:
+            linestring = _coords_to_linestring(geom_coords)
+            if linestring is not None:
+                features.man_made.append(OsmManMade(
+                    geometry=linestring, man_made=man_made_type,
+                ))
+        return
+
+    # Waterway=dock (water basin) — store as natural water area
+    if tags.get("waterway") == "dock":
+        polygon = _coords_to_polygon(geom_coords)
+        if polygon is not None and polygon.IsValid():
+            features.natural.append(OsmNatural(
+                geometry=polygon, natural="water",
             ))
         return
 

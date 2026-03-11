@@ -336,7 +336,8 @@ def main(argv=None):
                   f"{len(osm_features.landuse)} landuse, "
                   f"{len(osm_features.roads)} roads, "
                   f"{len(osm_features.parking)} parking, "
-                  f"{len(osm_features.natural)} natural areas")
+                  f"{len(osm_features.natural)} natural, "
+                  f"{len(osm_features.man_made)} marine infrastructure")
             if s57_features is not None:
                 s57_features, n_matched, n_added = match_and_enrich(
                     s57_features, osm_features,
@@ -417,7 +418,8 @@ def main(argv=None):
                 ref_lat, ref_lon,
             )
             n_features = (len(osm_features.landuse) + len(osm_features.roads)
-                          + len(osm_features.parking) + len(osm_features.natural))
+                          + len(osm_features.parking) + len(osm_features.natural)
+                          + len(osm_features.man_made))
             print(f"  Rasterized {n_features} terrain features "
                   f"onto {grid_size}x{grid_size} texture")
 
@@ -465,6 +467,8 @@ def main(argv=None):
             skip_categories=skip_categories,
             simplify_tolerance=simplify_tol,
             max_wall_segments=args.max_wall_segments,
+            osm_man_made=osm_features.man_made if osm_features else None,
+            osm_roads=osm_features.roads if osm_features else None,
         )
         s57_feature_sdf = feature_groups['s57']
         osm_feature_sdf = feature_groups['osm']

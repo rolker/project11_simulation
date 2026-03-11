@@ -894,6 +894,7 @@ def generate_feature_models(
     terrain=None, terrain_bounds=None, debug=False,
     skip_categories=None, simplify_tolerance=0.0,
     max_wall_segments=None,
+    osm_man_made=None, osm_roads=None,
 ):
     """Convert S57 features to grouped SDF <model> XML strings.
 
@@ -1181,6 +1182,63 @@ def generate_feature_models(
             if wall:
                 coastlines.append(wall)
 
+    # Marine infrastructure from OSM (piers, quays, breakwaters, groynes)
+    _MARINE_COLORS = {
+        'pier': ('0.65 0.62 0.58 1.0', '0.75 0.72 0.68 1.0'),
+        'quay': ('0.55 0.55 0.53 1.0', '0.65 0.65 0.63 1.0'),
+        'breakwater': ('0.45 0.45 0.43 1.0', '0.55 0.55 0.53 1.0'),
+        'groyne': ('0.45 0.45 0.43 1.0', '0.55 0.55 0.53 1.0'),
+    }
+    _MARINE_DEFAULT_COLOR = ('0.55 0.55 0.53 1.0', '0.65 0.65 0.63 1.0')
+    marine_models = []
+    for i, mm in enumerate(osm_man_made or []):
+        amb, dif = _MARINE_COLORS.get(mm.man_made, _MARINE_DEFAULT_COLOR)
+        geom_type = mm.geometry.GetGeometryType() & 0xFF
+        if geom_type in (3, 6):  # Polygon — flat extruded slab
+            centroid = mm.geometry.Centroid()
+            cx, cy = _latlon_to_enu(
+                centroid.GetY(), centroid.GetX(), center_lat, center_lon)
+            z = _sample_terrain_elevation(cx, cy, terrain, terrain_bounds)
+            model = _polygon_to_polyline_model(
+                f'marine_{i:04d}_{mm.man_made}', mm.geometry,
+                center_lat, center_lon, 1.0, z=z,
+                ambient=amb, diffuse=dif, collision=False,
+            )
+            if model:
+                marine_models.append(model)
+        elif geom_type in (2, 5, 7):  # LineString — wall segments
+            wall_width = 3.0 if mm.man_made in ('breakwater', 'groyne') else 2.0
+            height = 2.0 if mm.man_made in ('breakwater', 'groyne') else 1.0
+            wall, _ = _slcons_wall_model(
+                f'marine_{i:04d}_{mm.man_made}', mm.geometry,
+                center_lat, center_lon,
+                height=height, wall_width=wall_width,
+                ambient=amb, diffuse=dif, collision=False,
+            )
+            if wall:
+                marine_models.append(wall)
+
+    # Roads from OSM (flat strips for debugging)
+    _ROAD_WIDTHS = {
+        'motorway': 12.0, 'trunk': 10.0, 'primary': 9.0,
+        'secondary': 8.0, 'tertiary': 7.0, 'residential': 6.0,
+        'unclassified': 5.0, 'service': 4.0, 'track': 3.0,
+        'footway': 1.5, 'path': 1.5, 'cycleway': 2.0, 'steps': 1.5,
+    }
+    _ROAD_AMB = '0.3 0.3 0.3 1.0'
+    _ROAD_DIF = '0.4 0.4 0.4 1.0'
+    road_models = []
+    for i, road in enumerate(osm_roads or []):
+        width = _ROAD_WIDTHS.get(road.highway, 4.0)
+        wall, _ = _slcons_wall_model(
+            f'road_{i:04d}_{road.highway}', road.geometry,
+            center_lat, center_lon,
+            height=0.15, wall_width=width, z=0.1,
+            ambient=_ROAD_AMB, diffuse=_ROAD_DIF, collision=False,
+        )
+        if wall:
+            road_models.append(wall)
+
     # Build grouped container models
     s57_types = {
         'buildings': s57_buildings,
@@ -1198,6 +1256,8 @@ def generate_feature_models(
     }
     osm_types = {
         'buildings': osm_buildings,
+        'marine': marine_models,
+        'roads': road_models,
     }
 
     return {

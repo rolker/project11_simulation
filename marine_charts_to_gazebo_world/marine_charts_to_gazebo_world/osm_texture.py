@@ -79,6 +79,15 @@ _ROAD_STYLES = {
 }
 _DEFAULT_ROAD_STYLE = {"color": (170, 170, 165), "width": 4.0}
 
+# Marine infrastructure colors and widths by man_made type
+_MAN_MADE_STYLES = {
+    "pier": {"color": (180, 175, 165), "width": 3.0},       # light gray
+    "quay": {"color": (160, 155, 150), "width": 4.0},       # medium gray
+    "breakwater": {"color": (140, 140, 135), "width": 5.0},  # dark gray
+    "groyne": {"color": (140, 140, 135), "width": 3.0},      # dark gray
+}
+_DEFAULT_MAN_MADE_STYLE = {"color": (160, 155, 150), "width": 3.0}
+
 
 def _latlon_to_pixel(lats, lons, ref_lat, ref_lon, size_x, size_y, grid_size):
     """Convert lat/lon arrays to pixel coordinates.
@@ -198,8 +207,20 @@ def rasterize_osm_texture(
         if len(coords) >= 3:
             draw.polygon(coords, fill=_PARKING_COLOR)
 
-    # Layer 4: Roads with width
+    # Layer 4: Marine infrastructure (man_made polygons and linestrings)
     meters_per_pixel = size_x / (grid_size - 1)
+    for mm in osm_features.man_made:
+        style = _MAN_MADE_STYLES.get(mm.man_made, _DEFAULT_MAN_MADE_STYLE)
+        geom_type = mm.geometry.GetGeometryType() & 0xFF
+        coords = _geometry_to_pixel_coords(
+            mm.geometry, ref_lat, ref_lon, size_x, size_y, grid_size)
+        if geom_type == 3 and len(coords) >= 3:  # Polygon
+            draw.polygon(coords, fill=style["color"])
+        elif len(coords) >= 2:  # LineString
+            pixel_width = max(1, round(style["width"] / meters_per_pixel))
+            draw.line(coords, fill=style["color"], width=pixel_width)
+
+    # Layer 5: Roads with width
     for road in osm_features.roads:
         style = _ROAD_STYLES.get(road.highway, _DEFAULT_ROAD_STYLE)
         pixel_width = max(1, round(style["width"] / meters_per_pixel))
@@ -216,7 +237,8 @@ def rasterize_osm_texture(
         img = Image.fromarray(arr)
 
     n_features = (len(osm_features.landuse) + len(osm_features.natural)
-                  + len(osm_features.parking) + len(osm_features.roads))
+                  + len(osm_features.parking) + len(osm_features.roads)
+                  + len(osm_features.man_made))
     logger.info("Rasterized %d terrain features onto %dx%d texture",
                 n_features, grid_size, grid_size)
 
