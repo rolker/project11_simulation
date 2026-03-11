@@ -22,6 +22,8 @@ import tempfile
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+import time
+
 import requests
 from osgeo import ogr
 
@@ -31,7 +33,17 @@ ogr.UseExceptions()
 
 logger = logging.getLogger(__name__)
 
-_OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+# Overpass API endpoints, tried in order.  The primary is the main public
+# instance; the others are community mirrors used as fallbacks.
+_OVERPASS_ENDPOINTS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+]
+
+# Retry parameters
+_MAX_RETRIES = 3
+_RETRY_BACKOFF_BASE = 5  # seconds; actual wait = base * 2^attempt
 
 _DEFAULT_CACHE_DIR = os.path.join(
     os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")),
@@ -270,6 +282,43 @@ def _parse_terrain_element(element: dict, features: OsmFeatures):
         return
 
 
+def _fetch_with_retries(query: str) -> dict:
+    """Fetch Overpass data, retrying across endpoints with backoff.
+
+    Tries each endpoint up to ``_MAX_RETRIES`` times with exponential
+    backoff before moving to the next endpoint.  Raises the last
+    encountered exception if all endpoints and retries are exhausted.
+    """
+    last_exc = None
+    for endpoint in _OVERPASS_ENDPOINTS:
+        for attempt in range(_MAX_RETRIES):
+            try:
+                logger.info(
+                    "Querying %s (attempt %d/%d)...",
+                    endpoint, attempt + 1, _MAX_RETRIES,
+                )
+                response = requests.get(
+                    endpoint,
+                    params={"data": query},
+                    timeout=(30, 180),
+                )
+                response.raise_for_status()
+                return response.json()
+            except (requests.RequestException, ValueError) as exc:
+                last_exc = exc
+                wait = _RETRY_BACKOFF_BASE * (2 ** attempt)
+                logger.warning(
+                    "%s attempt %d failed: %s  Retrying in %ds...",
+                    endpoint, attempt + 1, exc, wait,
+                )
+                time.sleep(wait)
+        logger.warning(
+            "All %d retries exhausted for %s, trying next endpoint...",
+            _MAX_RETRIES, endpoint,
+        )
+    raise last_exc  # type: ignore[misc]
+
+
 def fetch_osm_features(
     bbox: BoundingBox,
     cache_dir: Optional[str] = None,
@@ -302,14 +351,7 @@ def fetch_osm_features(
             data = json.load(f)
     else:
         query = _build_overpass_query(bbox, fetch_terrain_features)
-        logger.info("Querying Overpass API...")
-        response = requests.get(
-            _OVERPASS_URL,
-            params={"data": query},
-            timeout=(30, 180),
-        )
-        response.raise_for_status()
-        data = response.json()
+        data = _fetch_with_retries(query)
 
         # Write cache atomically
         fd, tmp_path = tempfile.mkstemp(
