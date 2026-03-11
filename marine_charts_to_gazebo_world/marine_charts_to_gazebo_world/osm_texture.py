@@ -117,11 +117,11 @@ def _latlon_to_pixel(lats, lons, ref_lat, ref_lon, tex_size, size_x, size_y,
         ref_lat, ref_lon,
     )
     # Map ENU to UV coordinates, then to pixels.
-    # Gazebo heightmap UV: U goes [0, size_x/tex_size] west-to-east,
-    # V goes [0, size_y/tex_size] south-to-north.
-    # Image row 0 = top (V=1), row grid_size-1 = bottom (V=0 = south).
+    # Gazebo OGRE2 heightmap: image row 0 = north edge, V=0.
+    # V increases southward: V = size_y/tex_size at the south edge.
+    # U=0 at the west edge, increases eastward.
     px = (east + size_x / 2) / tex_size * (grid_size - 1)
-    py = (grid_size - 1) - (north + size_y / 2) / tex_size * (grid_size - 1)
+    py = (size_y / 2 - north) / tex_size * (grid_size - 1)
     return list(zip(px.tolist(), py.tolist()))
 
 
