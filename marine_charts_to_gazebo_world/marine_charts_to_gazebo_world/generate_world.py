@@ -25,7 +25,7 @@ from .coordinates import latlon_to_enu
 from .feature_models import generate_feature_models
 from .heightmap import terrain_to_heightmap
 from .osm_fetcher import fetch_osm_features
-from .osm_matcher import match_and_enrich
+from .osm_matcher import match_and_enrich, match_piers
 from .osm_texture import rasterize_osm_texture
 from .s57_reader import BoundingBox, read_enc_directory
 from .terrain import build_terrain
@@ -345,6 +345,28 @@ def main(argv=None):
                 )
                 print(f"  Matched {n_matched} S57 buildings with OSM data")
                 print(f"  Added {n_added} OSM-only buildings")
+                s57_features, n_pier_matched, n_pier_added, matched_pier_indices = match_piers(
+                    s57_features, osm_features,
+                    add_unmatched=not args.no_osm_buildings,
+                )
+                print(f"  Pier matching: {n_pier_matched} matched, {n_pier_added} added")
+                # Remove OSM piers from man_made to avoid double rendering.
+                # When add_unmatched is true, all pier polygons are handled
+                # via SLCONS (matched or added), so filter them all out.
+                if n_pier_matched or n_pier_added:
+                    if not args.no_osm_buildings:
+                        # All pier polygons consumed — remove them all
+                        osm_features.man_made = [
+                            mm for mm in osm_features.man_made
+                            if not (mm.man_made == 'pier'
+                                    and (mm.geometry.GetGeometryType() & 0xFF) in (3, 6))
+                        ]
+                    elif matched_pier_indices:
+                        # Only remove matched ones
+                        osm_features.man_made = [
+                            mm for idx, mm in enumerate(osm_features.man_made)
+                            if idx not in matched_pier_indices
+                        ]
         except Exception as e:
             print(f"  Warning: OSM enrichment failed, skipping: {e}")
             osm_features = None
