@@ -200,7 +200,7 @@ def _write_model_sdf(model_dir: str, info: dict):
     # Land texture <size>: use terrain dimensions for 1:1 mapping when
     # an OSM-rasterized texture is present, otherwise tile at 10m.
     if info.get("has_osm_texture"):
-        land_tex_size = f"{info['size_x']:.1f}"
+        land_tex_size = f"{info.get('osm_tex_size', info['size_x']):.1f}"
     else:
         land_tex_size = "10"
 

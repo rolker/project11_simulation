@@ -365,13 +365,14 @@ def main(argv=None):
 
             # Rasterize OSM texture for this tile
             land_texture = None
+            osm_tex_size = None
             if osm_features is not None:
                 tile_size_x, tile_size_y = _bbox_size_meters(tile_bbox)
                 tile_terrain_info = {
                     "size_x": tile_size_x, "size_y": tile_size_y,
                 }
                 print("  Rasterizing OSM terrain texture...")
-                land_texture = rasterize_osm_texture(
+                land_texture, osm_tex_size = rasterize_osm_texture(
                     osm_features, tile_terrain_info, grid_size,
                     ref_lat, ref_lon,
                 )
@@ -382,6 +383,8 @@ def main(argv=None):
                 model_name=f"terrain_{name}",
                 land_texture=land_texture,
             )
+            if osm_tex_size is not None:
+                heightmap_info["osm_tex_size"] = osm_tex_size
             # Embed ENU offset directly in the heightmap <pos> element
             # (Gazebo's OGRE2 heightmap renderer uses <pos>, not model pose)
             enu_x, enu_y = _bbox_center_enu(
@@ -407,13 +410,14 @@ def main(argv=None):
 
         # Rasterize OSM texture for the single tile
         land_texture = None
+        osm_tex_size = None
         if osm_features is not None:
             tile_size_x, tile_size_y = _bbox_size_meters(tile_bbox)
             tile_terrain_info = {
                 "size_x": tile_size_x, "size_y": tile_size_y,
             }
             print("Rasterizing OSM terrain texture...")
-            land_texture = rasterize_osm_texture(
+            land_texture, osm_tex_size = rasterize_osm_texture(
                 osm_features, tile_terrain_info, grid_size,
                 ref_lat, ref_lon,
             )
@@ -429,6 +433,8 @@ def main(argv=None):
             model_name=f"{args.world_name}_terrain",
             land_texture=land_texture,
         )
+        if osm_tex_size is not None:
+            heightmap_info["osm_tex_size"] = osm_tex_size
         heightmap_result = heightmap_info
 
     # Step 5: Generate feature models (optional)

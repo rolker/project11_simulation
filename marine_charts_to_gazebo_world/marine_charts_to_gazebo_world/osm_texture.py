@@ -89,14 +89,21 @@ _MAN_MADE_STYLES = {
 _DEFAULT_MAN_MADE_STYLE = {"color": (160, 155, 150), "width": 3.0}
 
 
-def _latlon_to_pixel(lats, lons, ref_lat, ref_lon, size_x, size_y, grid_size):
+def _latlon_to_pixel(lats, lons, ref_lat, ref_lon, tex_size, size_x, size_y,
+                     grid_size):
     """Convert lat/lon arrays to pixel coordinates.
+
+    The texture is a square image (grid_size x grid_size) that covers
+    tex_size x tex_size meters (where tex_size = max(size_x, size_y)).
+    The heightmap extent (size_x x size_y) is centered within this
+    square so that Gazebo's UV mapping aligns features correctly.
 
     Args:
         lats: numpy array of latitudes.
         lons: numpy array of longitudes.
         ref_lat: Reference latitude (terrain center).
         ref_lon: Reference longitude (terrain center).
+        tex_size: Texture tiling size in meters (square).
         size_x: Terrain width in meters.
         size_y: Terrain height in meters.
         grid_size: Image size in pixels.
@@ -109,14 +116,14 @@ def _latlon_to_pixel(lats, lons, ref_lat, ref_lon, size_x, size_y, grid_size):
         np.asarray(lons, dtype=np.float64),
         ref_lat, ref_lon,
     )
-    # ENU origin is at center; pixels go from 0 to grid_size-1
-    px = (east + size_x / 2) / size_x * (grid_size - 1)
-    py = (grid_size - 1) - (north + size_y / 2) / size_y * (grid_size - 1)
+    # ENU origin is at center; map to square texture of tex_size meters
+    px = (east + tex_size / 2) / tex_size * (grid_size - 1)
+    py = (grid_size - 1) - (north + tex_size / 2) / tex_size * (grid_size - 1)
     return list(zip(px.tolist(), py.tolist()))
 
 
 def _geometry_to_pixel_coords(geom, ref_lat, ref_lon,
-                              size_x, size_y, grid_size):
+                              tex_size, size_x, size_y, grid_size):
     """Extract coordinates from an OGR geometry and convert to pixels.
 
     For polygons, returns the exterior ring coordinates.
@@ -128,7 +135,7 @@ def _geometry_to_pixel_coords(geom, ref_lat, ref_lon,
         lats = [geom.GetY(i) for i in range(geom.GetPointCount())]
         lons = [geom.GetX(i) for i in range(geom.GetPointCount())]
         return _latlon_to_pixel(lats, lons, ref_lat, ref_lon,
-                                size_x, size_y, grid_size)
+                                tex_size, size_x, size_y, grid_size)
 
     if geom_type == 3:  # Polygon
         ring = geom.GetGeometryRef(0)  # exterior ring
@@ -137,7 +144,7 @@ def _geometry_to_pixel_coords(geom, ref_lat, ref_lon,
         lats = [ring.GetY(i) for i in range(ring.GetPointCount())]
         lons = [ring.GetX(i) for i in range(ring.GetPointCount())]
         return _latlon_to_pixel(lats, lons, ref_lat, ref_lon,
-                                size_x, size_y, grid_size)
+                                tex_size, size_x, size_y, grid_size)
 
     return []
 
@@ -176,6 +183,12 @@ def rasterize_osm_texture(
     size_x = terrain_info["size_x"]
     size_y = terrain_info["size_y"]
 
+    # Gazebo heightmap texture <size> uses a single value for both U and V
+    # tiling.  For non-square heightmaps we use the larger dimension so the
+    # texture covers the full extent without clipping.  Features are
+    # rasterized into the correct region of this square texture.
+    tex_size = max(size_x, size_y)
+
     # Start with base land color
     img = Image.new("RGB", (grid_size, grid_size), LAND_BASE)
     draw = ImageDraw.Draw(img)
@@ -186,7 +199,8 @@ def rasterize_osm_texture(
         if color is None:
             continue
         coords = _geometry_to_pixel_coords(
-            lu.geometry, ref_lat, ref_lon, size_x, size_y, grid_size)
+            lu.geometry, ref_lat, ref_lon,
+            tex_size, size_x, size_y, grid_size)
         if len(coords) >= 3:
             draw.polygon(coords, fill=color)
 
@@ -196,24 +210,27 @@ def rasterize_osm_texture(
         if color is None:
             continue
         coords = _geometry_to_pixel_coords(
-            nat.geometry, ref_lat, ref_lon, size_x, size_y, grid_size)
+            nat.geometry, ref_lat, ref_lon,
+            tex_size, size_x, size_y, grid_size)
         if len(coords) >= 3:
             draw.polygon(coords, fill=color)
 
     # Layer 3: Parking polygons
     for pkg in osm_features.parking:
         coords = _geometry_to_pixel_coords(
-            pkg.geometry, ref_lat, ref_lon, size_x, size_y, grid_size)
+            pkg.geometry, ref_lat, ref_lon,
+            tex_size, size_x, size_y, grid_size)
         if len(coords) >= 3:
             draw.polygon(coords, fill=_PARKING_COLOR)
 
     # Layer 4: Marine infrastructure (man_made polygons and linestrings)
-    meters_per_pixel = size_x / (grid_size - 1)
+    meters_per_pixel = tex_size / (grid_size - 1)
     for mm in osm_features.man_made:
         style = _MAN_MADE_STYLES.get(mm.man_made, _DEFAULT_MAN_MADE_STYLE)
         geom_type = mm.geometry.GetGeometryType() & 0xFF
         coords = _geometry_to_pixel_coords(
-            mm.geometry, ref_lat, ref_lon, size_x, size_y, grid_size)
+            mm.geometry, ref_lat, ref_lon,
+            tex_size, size_x, size_y, grid_size)
         if geom_type == 3 and len(coords) >= 3:  # Polygon
             draw.polygon(coords, fill=style["color"])
         elif len(coords) >= 2:  # LineString
@@ -225,7 +242,8 @@ def rasterize_osm_texture(
         style = _ROAD_STYLES.get(road.highway, _DEFAULT_ROAD_STYLE)
         pixel_width = max(1, round(style["width"] / meters_per_pixel))
         coords = _geometry_to_pixel_coords(
-            road.geometry, ref_lat, ref_lon, size_x, size_y, grid_size)
+            road.geometry, ref_lat, ref_lon,
+            tex_size, size_x, size_y, grid_size)
         if len(coords) >= 2:
             draw.line(coords, fill=style["color"], width=pixel_width)
 
@@ -242,4 +260,4 @@ def rasterize_osm_texture(
     logger.info("Rasterized %d terrain features onto %dx%d texture",
                 n_features, grid_size, grid_size)
 
-    return img
+    return img, tex_size
