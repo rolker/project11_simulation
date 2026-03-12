@@ -512,12 +512,213 @@ _CATSLC_SKIP_NAME = {
 }
 
 
+def _simplify_enu_linestring(enu_pts, min_seg_len, min_angle_deg=5.0):
+    """Remove nearly-collinear vertices and segments shorter than min_seg_len.
+
+    This prevents the offset polygon from self-intersecting at very
+    short segments or near-180° bends.
+    """
+    if len(enu_pts) <= 2:
+        return list(enu_pts)
+
+    min_cos = math.cos(math.radians(min_angle_deg))
+    result = [enu_pts[0]]
+
+    for i in range(1, len(enu_pts) - 1):
+        px, py = result[-1]
+        cx, cy = enu_pts[i]
+        nx, ny = enu_pts[i + 1]
+
+        dx0, dy0 = cx - px, cy - py
+        dx1, dy1 = nx - cx, ny - cy
+        l0 = math.sqrt(dx0 * dx0 + dy0 * dy0)
+        l1 = math.sqrt(dx1 * dx1 + dy1 * dy1)
+
+        # Skip point if incoming segment is too short
+        if l0 < min_seg_len:
+            continue
+
+        # Skip nearly collinear points (angle between segments < threshold)
+        if l0 > 1e-9 and l1 > 1e-9:
+            dot = (dx0 * dx1 + dy0 * dy1) / (l0 * l1)
+            if dot > min_cos:
+                continue
+
+        result.append(enu_pts[i])
+
+    result.append(enu_pts[-1])
+
+    # Remove final short trailing segment
+    if len(result) > 2:
+        dx = result[-1][0] - result[-2][0]
+        dy = result[-1][1] - result[-2][1]
+        if math.sqrt(dx * dx + dy * dy) < min_seg_len:
+            result[-2] = result[-1]
+            result.pop()
+
+    return result
+
+
+def _offset_open(pts, hw, max_miter):
+    """Offset an open linestring into a polygon (right fwd + left back)."""
+    n = len(pts)
+    if n < 2:
+        return []
+    normals = []
+    for i in range(n - 1):
+        dx = pts[i + 1][0] - pts[i][0]
+        dy = pts[i + 1][1] - pts[i][1]
+        sl = math.sqrt(dx * dx + dy * dy)
+        if sl < 1e-9:
+            normals.append((0.0, 0.0))
+        else:
+            normals.append((dy / sl, -dx / sl))
+
+    def _miter(pt, nb, na):
+        mx = nb[0] + na[0]
+        my = nb[1] + na[1]
+        mlen = math.sqrt(mx * mx + my * my)
+        if mlen < 1e-9:
+            mx, my = nb
+            scale = hw
+        else:
+            mx /= mlen
+            my /= mlen
+            dot = mx * nb[0] + my * nb[1]
+            scale = min(hw / dot, max_miter) if abs(dot) > 0.01 else max_miter
+        return ((pt[0] + mx * scale, pt[1] + my * scale),
+                (pt[0] - mx * scale, pt[1] - my * scale))
+
+    right, left = [], []
+    for i in range(n):
+        if i == 0:
+            nx, ny = normals[0]
+            right.append((pts[0][0] + nx * hw, pts[0][1] + ny * hw))
+            left.append((pts[0][0] - nx * hw, pts[0][1] - ny * hw))
+        elif i == n - 1:
+            nx, ny = normals[-1]
+            right.append((pts[i][0] + nx * hw, pts[i][1] + ny * hw))
+            left.append((pts[i][0] - nx * hw, pts[i][1] - ny * hw))
+        else:
+            r, l = _miter(pts[i], normals[i - 1], normals[i])
+            right.append(r)
+            left.append(l)
+    return right + list(reversed(left))
+
+
+def _offset_linestring_to_polygon(enu_pts, half_width):
+    """Offset a linestring by half_width on each side to create a polygon.
+
+    Uses miter joins at internal vertices for square corners.  At very
+    acute angles (< 30°) the miter is clamped to 3× half_width to avoid
+    extreme spikes.  Input is simplified first to remove segments shorter
+    than the wall width that would cause self-intersection.
+
+    Returns list of (x, y) tuples forming a closed polygon (right side
+    forward, then left side backward, forming a loop).
+    """
+    # Simplify to avoid self-intersection from short segments
+    enu_pts = _simplify_enu_linestring(enu_pts, half_width * 2.0)
+
+    # Detect closed linestring (first == last point)
+    is_closed = (len(enu_pts) >= 4
+                 and abs(enu_pts[0][0] - enu_pts[-1][0]) < 0.01
+                 and abs(enu_pts[0][1] - enu_pts[-1][1]) < 0.01)
+    if is_closed:
+        enu_pts = enu_pts[:-1]  # remove duplicate closing point
+
+    n = len(enu_pts)
+    if n < 2:
+        return []
+
+    hw = half_width
+    max_miter = 3.0 * hw  # clamp for very acute angles
+
+    # Compute unit normals (perpendicular, pointing right) per segment
+    n_segs = n if is_closed else n - 1
+    normals = []
+    for i in range(n_segs):
+        j = (i + 1) % n
+        dx = enu_pts[j][0] - enu_pts[i][0]
+        dy = enu_pts[j][1] - enu_pts[i][1]
+        seg_len = math.sqrt(dx * dx + dy * dy)
+        if seg_len < 1e-9:
+            normals.append((0.0, 0.0))
+        else:
+            # Right-hand normal: rotate direction 90° clockwise
+            normals.append((dy / seg_len, -dx / seg_len))
+
+    def _miter_offset(pt, norm_before, norm_after):
+        """Compute right and left offset points at a mitered vertex."""
+        mx = norm_before[0] + norm_after[0]
+        my = norm_before[1] + norm_after[1]
+        mlen = math.sqrt(mx * mx + my * my)
+        if mlen < 1e-9:
+            mx, my = norm_before
+            scale = hw
+        else:
+            mx /= mlen
+            my /= mlen
+            dot = mx * norm_before[0] + my * norm_before[1]
+            if abs(dot) < 0.01:
+                scale = max_miter
+            else:
+                scale = min(hw / dot, max_miter)
+        return ((pt[0] + mx * scale, pt[1] + my * scale),
+                (pt[0] - mx * scale, pt[1] - my * scale))
+
+    # Compute offset points at each vertex using miter joins
+    right_pts = []
+    left_pts = []
+
+    for i in range(n):
+        if is_closed:
+            # All vertices are internal — wrap around
+            nb = normals[(i - 1) % n_segs]
+            na = normals[i % n_segs]
+            r, l = _miter_offset(enu_pts[i], nb, na)
+        elif i == 0:
+            # Start cap: use first segment's normal
+            nx, ny = normals[0]
+            r = (enu_pts[i][0] + nx * hw, enu_pts[i][1] + ny * hw)
+            l = (enu_pts[i][0] - nx * hw, enu_pts[i][1] - ny * hw)
+        elif i == n - 1:
+            # End cap: use last segment's normal
+            nx, ny = normals[-1]
+            r = (enu_pts[i][0] + nx * hw, enu_pts[i][1] + ny * hw)
+            l = (enu_pts[i][0] - nx * hw, enu_pts[i][1] - ny * hw)
+        else:
+            # Internal vertex: miter join
+            r, l = _miter_offset(enu_pts[i], normals[i - 1], normals[i])
+        right_pts.append(r)
+        left_pts.append(l)
+
+    if is_closed:
+        # Closed linestring: split at midpoint into two open segments,
+        # each offset independently.  This avoids the figure-8 self-
+        # intersection that arises from concatenating right+left loops.
+        mid = n // 2
+        seg1 = enu_pts[:mid + 1]  # first half (overlaps at midpoint)
+        seg2 = enu_pts[mid:] + [enu_pts[0]]  # second half, close back
+        poly1 = _offset_open(seg1, hw, max_miter)
+        poly2 = _offset_open(seg2, hw, max_miter)
+        return ('split', poly1, poly2)
+
+    # Open linestring: right side forward, left side backward
+    return right_pts + list(reversed(left_pts))
+
+
 def _slcons_wall_model(name, geometry, center_lat, center_lon,
                         height=2.0, wall_width=1.0, z=0.0,
                         ambient='0.55 0.55 0.50 1.0',
                         diffuse='0.65 0.65 0.60 1.0',
                         collision=True, seg_budget=None):
-    """Generate SDF wall segments along a shoreline construction linestring."""
+    """Generate SDF polyline extrusion along a shoreline construction.
+
+    Offsets the linestring by wall_width/2 on each side to create a
+    polygon with mitered corners, then extrudes it as a single polyline
+    model.  This produces clean square joints at all bend angles.
+    """
     geom_type = geometry.GetGeometryType() & 0xFF
     if geom_type == 2:  # wkbLineString
         lines = [geometry]
@@ -532,12 +733,12 @@ def _slcons_wall_model(name, geometry, center_lat, center_lon,
             if stype in (2, 5):  # LineString or MultiLineString
                 lines.append(sub)
     else:
-        return ''
+        return '', 0
 
-    segments = []
-    seg_idx = 0
+    models = []
+    model_idx = 0
     for line in lines:
-        if seg_budget is not None and seg_idx >= seg_budget:
+        if seg_budget is not None and model_idx >= seg_budget:
             break
         # Handle MultiLineString sub-geometries
         if (line.GetGeometryType() & 0xFF) == 5:
@@ -546,58 +747,125 @@ def _slcons_wall_model(name, geometry, center_lat, center_lon,
         else:
             sub_lines = [line]
         for sline in sub_lines:
-            if seg_budget is not None and seg_idx >= seg_budget:
+            if seg_budget is not None and model_idx >= seg_budget:
                 break
             n = sline.GetPointCount()
-            for i in range(n - 1):
-                if seg_budget is not None and seg_idx >= seg_budget:
-                    break
-                lon0, lat0 = sline.GetX(i), sline.GetY(i)
-                lon1, lat1 = sline.GetX(i + 1), sline.GetY(i + 1)
-                x0, y0 = _latlon_to_enu(lat0, lon0, center_lat, center_lon)
-                x1, y1 = _latlon_to_enu(lat1, lon1, center_lat, center_lon)
-                mx = (x0 + x1) / 2.0
-                my = (y0 + y1) / 2.0
-                dx, dy = x1 - x0, y1 - y0
-                length = math.sqrt(dx * dx + dy * dy)
-                if length < 0.1:
-                    continue
-                yaw = math.atan2(dy, dx)
-                segments.append(
-                    f'    <model name="{name}_seg{seg_idx:04d}">\n'
-                    f'      <static>true</static>\n'
-                    f'      <pose>{mx:.2f} {my:.2f} {height / 2 + z:.2f} '
-                    f'0 0 {yaw:.4f}</pose>\n'
-                    f'      <link name="link">\n'
-                    f'        <visual name="visual">\n'
-                    f'          <geometry>\n'
-                    f'            <box>\n'
-                    f'              <size>{length:.2f} {wall_width} '
-                    f'{height:.1f}</size>\n'
-                    f'            </box>\n'
-                    f'          </geometry>\n'
-                    f'          <material>\n'
-                    f'            <ambient>{ambient}</ambient>\n'
-                    f'            <diffuse>{diffuse}</diffuse>\n'
-                    f'          </material>\n'
-                    f'        </visual>\n'
-                    + (
-                        f'        <collision name="collision">\n'
-                        f'          <geometry>\n'
-                        f'            <box>\n'
-                        f'              <size>{length:.2f} {wall_width} '
-                        f'{height:.1f}</size>\n'
-                        f'            </box>\n'
-                        f'          </geometry>\n'
-                        f'        </collision>\n'
-                        if collision else ''
-                    )
-                    + f'      </link>\n'
-                    f'    </model>'
-                )
-                seg_idx += 1
+            if n < 2:
+                continue
 
-    return '\n\n'.join(segments), seg_idx
+            # Convert to ENU
+            enu_pts = []
+            for pi in range(n):
+                lon_p, lat_p = sline.GetX(pi), sline.GetY(pi)
+                enu_pts.append(
+                    _latlon_to_enu(lat_p, lon_p, center_lat, center_lon))
+
+            # Offset linestring to polygon
+            result = _offset_linestring_to_polygon(
+                enu_pts, wall_width / 2.0)
+
+            # Handle closed linestrings (split into two open segments)
+            if isinstance(result, tuple) and result[0] == 'split':
+                _, poly1, poly2 = result
+                # Emit each half as a separate model
+                for split_pts in (poly1, poly2):
+                    if len(split_pts) < 3:
+                        continue
+                    scx = sum(p[0] for p in split_pts) / len(split_pts)
+                    scy = sum(p[1] for p in split_pts) / len(split_pts)
+                    pts_lines = []
+                    for px, py in split_pts:
+                        pts_lines.append(
+                            f'          <point>{px - scx:.2f}'
+                            f' {py - scy:.2f}</point>')
+                    pts_lines.append(
+                        f'          <point>{split_pts[0][0] - scx:.2f}'
+                        f' {split_pts[0][1] - scy:.2f}</point>')
+                    ps = '\n'.join(pts_lines)
+                    pl_sdf = (
+                        f'            <polyline>\n'
+                        f'              <height>{height:.1f}</height>\n'
+                        f'{ps}\n'
+                        f'            </polyline>')
+                    m = (
+                        f'    <model name="{name}_p{model_idx:04d}">\n'
+                        f'      <static>true</static>\n'
+                        f'      <pose>{scx:.2f} {scy:.2f} {z:.2f}'
+                        f' 0 0 0</pose>\n'
+                        f'      <link name="link">\n'
+                        f'        <visual name="visual">\n'
+                        f'          <geometry>\n'
+                        f'{pl_sdf}\n'
+                        f'          </geometry>\n'
+                        f'          <material>\n'
+                        f'            <ambient>{ambient}</ambient>\n'
+                        f'            <diffuse>{diffuse}</diffuse>\n'
+                        f'          </material>\n'
+                        f'        </visual>\n'
+                        + (
+                            f'        <collision name="collision">\n'
+                            f'          <geometry>\n'
+                            f'{pl_sdf}\n'
+                            f'          </geometry>\n'
+                            f'        </collision>\n'
+                            if collision else ''
+                        )
+                        + f'      </link>\n'
+                        f'    </model>'
+                    )
+                    models.append(m)
+                    model_idx += 1
+                continue
+
+            poly_pts = result
+            if len(poly_pts) < 3:
+                continue
+            cx = sum(p[0] for p in poly_pts) / len(poly_pts)
+            cy = sum(p[1] for p in poly_pts) / len(poly_pts)
+
+            points = []
+            for px, py in poly_pts:
+                points.append(
+                    f'          <point>{px - cx:.2f}'
+                    f' {py - cy:.2f}</point>')
+            points.append(
+                f'          <point>{poly_pts[0][0] - cx:.2f}'
+                f' {poly_pts[0][1] - cy:.2f}</point>')
+            polyline_sdf = (
+                f'            <polyline>\n'
+                f'              <height>{height:.1f}</height>\n'
+                + '\n'.join(points) + '\n'
+                f'            </polyline>')
+
+            model = (
+                f'    <model name="{name}_p{model_idx:04d}">\n'
+                f'      <static>true</static>\n'
+                f'      <pose>{cx:.2f} {cy:.2f} {z:.2f} 0 0 0</pose>\n'
+                f'      <link name="link">\n'
+                f'        <visual name="visual">\n'
+                f'          <geometry>\n'
+                f'{polyline_sdf}\n'
+                f'          </geometry>\n'
+                f'          <material>\n'
+                f'            <ambient>{ambient}</ambient>\n'
+                f'            <diffuse>{diffuse}</diffuse>\n'
+                f'          </material>\n'
+                f'        </visual>\n'
+                + (
+                    f'        <collision name="collision">\n'
+                    f'          <geometry>\n'
+                    f'{polyline_sdf}\n'
+                    f'          </geometry>\n'
+                    f'        </collision>\n'
+                    if collision else ''
+                )
+                + f'      </link>\n'
+                f'    </model>'
+            )
+            models.append(model)
+            model_idx += 1
+
+    return '\n\n'.join(models), model_idx
 
 
 def _slcons_point_model(name, x, y, z=0.0, collision=True):
@@ -895,6 +1163,7 @@ def generate_feature_models(
     skip_categories=None, simplify_tolerance=0.0,
     max_wall_segments=None,
     osm_man_made=None,
+    osm_bridge_roads=None,
 ):
     """Convert S57 features to grouped SDF <model> XML strings.
 
@@ -1093,12 +1362,32 @@ def generate_feature_models(
             continue
         params = _SLCONS_PARAMS.get(sc.catslc, _SLCONS_DEFAULT)
         height, wall_width, amb, dif = params
+
+        # Adjust rendering based on water level attribute (all SLCONS types)
+        # watlev: 2=always dry, 3=submerged, 4=covers/uncovers (tidal),
+        #         7=floating
+        if sc.watlev == 7:
+            # Floating — slab straddling water surface
+            height = 1.0
+            z_override = -0.5
+        elif sc.watlev == 4:
+            # Tidal / covers and uncovers — slab at water surface
+            height = 1.0
+            z_override = -0.5
+        elif sc.watlev == 3:
+            # Submerged — thin slab below water
+            height = 0.5
+            z_override = -1.0
+        else:
+            z_override = None
+
         geom_type = sc.geometry.GetGeometryType() & 0xFF
         if geom_type in (2, 5, 7):  # LineString, MultiLineString, Collection
+            z = z_override if z_override is not None else 0.0
             wall, n_segs = _slcons_wall_model(
                 f'slcons_{i:04d}', sc.geometry,
                 center_lat, center_lon,
-                height=height, wall_width=wall_width,
+                height=height, wall_width=wall_width, z=z,
                 ambient=amb, diffuse=dif, collision=_LAND,
                 seg_budget=wall_seg_remaining,
             )
@@ -1107,10 +1396,13 @@ def generate_feature_models(
             if wall_seg_remaining is not None:
                 wall_seg_remaining -= n_segs
         elif geom_type in (3, 6):  # Polygon, MultiPolygon
-            centroid = sc.geometry.Centroid()
-            cx, cy = _latlon_to_enu(
-                centroid.GetY(), centroid.GetX(), center_lat, center_lon)
-            z = _sample_terrain_elevation(cx, cy, terrain, terrain_bounds)
+            if z_override is not None:
+                z = z_override
+            else:
+                centroid = sc.geometry.Centroid()
+                cx, cy = _latlon_to_enu(
+                    centroid.GetY(), centroid.GetX(), center_lat, center_lon)
+                z = _sample_terrain_elevation(cx, cy, terrain, terrain_bounds)
             model = _polygon_to_polyline_model(
                 f'slcons_{i:04d}', sc.geometry,
                 center_lat, center_lon, height, z=z,
@@ -1194,33 +1486,150 @@ def generate_feature_models(
         'groyne': ('0.45 0.45 0.43 1.0', '0.55 0.55 0.53 1.0'),
     }
     _MARINE_DEFAULT_COLOR = ('0.55 0.55 0.53 1.0', '0.65 0.65 0.63 1.0')
+    # Floating pier dimensions: deck freeboard and total slab thickness
+    _FLOATING_FREEBOARD = 0.5   # deck height above water (meters)
+    _FLOATING_DRAFT = 0.5       # depth below water (meters)
+    _FLOATING_THICKNESS = _FLOATING_FREEBOARD + _FLOATING_DRAFT  # total slab
     marine_models = []
     for i, mm in enumerate(osm_man_made or []):
         amb, dif = _MARINE_COLORS.get(mm.man_made, _MARINE_DEFAULT_COLOR)
+        is_floating = mm.floating is True
         geom_type = mm.geometry.GetGeometryType() & 0xFF
         if geom_type in (3, 6):  # Polygon — flat extruded slab
-            centroid = mm.geometry.Centroid()
-            cx, cy = _latlon_to_enu(
-                centroid.GetY(), centroid.GetX(), center_lat, center_lon)
-            z = _sample_terrain_elevation(cx, cy, terrain, terrain_bounds)
+            if is_floating:
+                z = -_FLOATING_DRAFT
+                slab_height = _FLOATING_THICKNESS
+            else:
+                centroid = mm.geometry.Centroid()
+                cx, cy = _latlon_to_enu(
+                    centroid.GetY(), centroid.GetX(), center_lat, center_lon)
+                z = _sample_terrain_elevation(cx, cy, terrain, terrain_bounds)
+                slab_height = 1.0
             model = _polygon_to_polyline_model(
                 f'marine_{i:04d}_{mm.man_made}', mm.geometry,
-                center_lat, center_lon, 1.0, z=z,
+                center_lat, center_lon, slab_height, z=z,
                 ambient=amb, diffuse=dif, collision=False,
             )
             if model:
                 marine_models.append(model)
         elif geom_type in (2, 5, 7):  # LineString — wall segments
-            wall_width = 3.0 if mm.man_made in ('breakwater', 'groyne') else 2.0
-            height = 2.0 if mm.man_made in ('breakwater', 'groyne') else 1.0
+            if is_floating:
+                wall_width = 3.0
+                height = _FLOATING_THICKNESS
+                z = -_FLOATING_DRAFT
+            else:
+                wall_width = 3.0 if mm.man_made in ('breakwater', 'groyne') else 2.0
+                height = 2.0 if mm.man_made in ('breakwater', 'groyne') else 1.0
+                z = 0.0
             wall, _ = _slcons_wall_model(
                 f'marine_{i:04d}_{mm.man_made}', mm.geometry,
                 center_lat, center_lon,
-                height=height, wall_width=wall_width,
+                height=height, wall_width=wall_width, z=z,
                 ambient=amb, diffuse=dif, collision=False,
             )
             if wall:
                 marine_models.append(wall)
+
+    # OSM bridge roads (gangways, elevated walkways)
+    # Gangway: sloped ramp from fixed pier (higher) to floating pier (lower).
+    # We detect which end connects to a floating pier to determine slope.
+    _GANGWAY_FIXED_Z = 1.5   # fixed end height above water (meters)
+    _GANGWAY_FLOAT_Z = 0.5   # floating end height (matches freeboard)
+    _GANGWAY_THICKNESS = 0.3
+    osm_bridge_models = []
+    for i, road in enumerate(osm_bridge_roads or []):
+        geom = road.geometry
+        n = geom.GetPointCount()
+        if n < 2:
+            continue
+
+        # Convert endpoints to ENU
+        start_enu = _latlon_to_enu(geom.GetY(0), geom.GetX(0),
+                                   center_lat, center_lon)
+        end_enu = _latlon_to_enu(geom.GetY(n - 1), geom.GetX(n - 1),
+                                 center_lat, center_lon)
+
+        # Determine which end is higher (fixed pier) vs lower (floating pier)
+        # by checking proximity to floating vs fixed man_made features.
+        start_near_float = False
+        end_near_float = False
+        for mm in (osm_man_made or []):
+            if mm.floating is not True:
+                continue
+            mm_geom = mm.geometry
+            # Check distance from gangway endpoints to floating feature
+            for pt_idx in range(mm_geom.GetPointCount()):
+                fx, fy = _latlon_to_enu(mm_geom.GetY(pt_idx),
+                                        mm_geom.GetX(pt_idx),
+                                        center_lat, center_lon)
+                ds = math.sqrt((start_enu[0] - fx) ** 2
+                               + (start_enu[1] - fy) ** 2)
+                de = math.sqrt((end_enu[0] - fx) ** 2
+                               + (end_enu[1] - fy) ** 2)
+                if ds < 5.0:
+                    start_near_float = True
+                if de < 5.0:
+                    end_near_float = True
+
+        if start_near_float and not end_near_float:
+            z_start = _GANGWAY_FLOAT_Z
+            z_end = _GANGWAY_FIXED_Z
+        elif end_near_float and not start_near_float:
+            z_start = _GANGWAY_FIXED_Z
+            z_end = _GANGWAY_FLOAT_Z
+        else:
+            # Can't determine — use fixed height
+            z_start = _GANGWAY_FIXED_Z
+            z_end = _GANGWAY_FIXED_Z
+
+        # Build as individual box segments with linearly interpolated z
+        width = 2.0 if road.highway == 'footway' else 3.5
+        amb = '0.55 0.50 0.45 1.0'
+        dif = '0.65 0.60 0.55 1.0'
+        seg_models = []
+        for si in range(n - 1):
+            t0 = si / (n - 1)
+            t1 = (si + 1) / (n - 1)
+            z0 = z_start + (z_end - z_start) * t0
+            z1 = z_start + (z_end - z_start) * t1
+            e0 = _latlon_to_enu(geom.GetY(si), geom.GetX(si),
+                                center_lat, center_lon)
+            e1 = _latlon_to_enu(geom.GetY(si + 1), geom.GetX(si + 1),
+                                center_lat, center_lon)
+            cx = (e0[0] + e1[0]) / 2.0
+            cy = (e0[1] + e1[1]) / 2.0
+            cz = (z0 + z1) / 2.0
+            dx = e1[0] - e0[0]
+            dy = e1[1] - e0[1]
+            seg_len = math.sqrt(dx * dx + dy * dy)
+            if seg_len < 0.1:
+                continue
+            yaw = math.atan2(dy, dx)
+            dz = z1 - z0
+            pitch = -math.atan2(dz, seg_len)
+            seg_models.append(
+                f'    <model name="osm_bridge_{i:04d}_s{si:02d}">\n'
+                f'      <static>true</static>\n'
+                f'      <pose>{cx:.2f} {cy:.2f} {cz:.2f}'
+                f' 0 {pitch:.4f} {yaw:.4f}</pose>\n'
+                f'      <link name="link">\n'
+                f'        <visual name="visual">\n'
+                f'          <geometry>\n'
+                f'            <box>\n'
+                f'              <size>{seg_len:.2f} {width:.1f}'
+                f' {_GANGWAY_THICKNESS}</size>\n'
+                f'            </box>\n'
+                f'          </geometry>\n'
+                f'          <material>\n'
+                f'            <ambient>{amb}</ambient>\n'
+                f'            <diffuse>{dif}</diffuse>\n'
+                f'          </material>\n'
+                f'        </visual>\n'
+                f'      </link>\n'
+                f'    </model>'
+            )
+        if seg_models:
+            osm_bridge_models.extend(seg_models)
 
     # Build grouped container models
     s57_types = {
@@ -1240,6 +1649,7 @@ def generate_feature_models(
     osm_types = {
         'buildings': osm_buildings,
         'marine': marine_models,
+        'bridges': osm_bridge_models,
     }
 
     return {
