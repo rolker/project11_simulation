@@ -167,6 +167,11 @@ def main():
     if max_segs is not None:
         gen_args.extend(['--max-wall-segments', str(max_segs)])
 
+    # Tree count cap (optional)
+    max_trees = config.get('max_trees')
+    if max_trees is not None:
+        gen_args.extend(['--max-trees', str(max_trees)])
+
     # ENC root: config override takes precedence, then env var
     enc_root = config.get('enc_root') or os.environ.get('ROS_S57_ENC_ROOT')
     if enc_root:

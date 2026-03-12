@@ -205,6 +205,14 @@ def parse_args(argv=None):
         help="Maximum number of wall segments for shore constructions. "
         "Limits the total SLCONS segment count across all features.",
     )
+    parser.add_argument(
+        "--max-trees",
+        type=int,
+        default=500,
+        help="Maximum number of tree models to generate. Tree spacing "
+        "is adjusted automatically to stay under this cap. "
+        "Set to 0 to disable trees. Default: 500.",
+    )
     return parser.parse_args(argv)
 
 
@@ -507,6 +515,8 @@ def main(argv=None):
             osm_man_made=osm_features.man_made if osm_features else None,
             osm_bridge_roads=[r for r in osm_features.roads if r.bridge]
             if osm_features else None,
+            osm_natural=osm_features.natural if osm_features else None,
+            max_trees=args.max_trees,
         )
         s57_feature_sdf = feature_groups['s57']
         osm_feature_sdf = feature_groups['osm']

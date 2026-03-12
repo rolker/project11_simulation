@@ -15,7 +15,10 @@
 """Convert S57 features to parametric SDF model elements for Gazebo."""
 
 import math
+import random
 import re
+
+from osgeo import ogr
 
 from .coordinates import latlon_to_enu
 
@@ -1157,6 +1160,163 @@ def _wrap_group(group_name, model_lists):
     )
 
 
+# Tree generation constants
+_TREE_SPACING_DEFAULT = 8.0  # meters between grid points at natural density
+_TREE_MAX_COUNT = 500        # default cap on total tree count
+_TRUNK_RADIUS = 0.15
+_TRUNK_HEIGHT = 3.0
+_CANOPY_RADIUS = 2.5
+_CANOPY_HEIGHT = 5.0
+_TREE_HEIGHT_VARIANCE = 0.3  # +/- fraction of nominal height
+
+
+def _compute_tree_spacing(natural_list, center_lat, center_lon, max_trees):
+    """Compute grid spacing so total trees stays under max_trees.
+
+    Estimates total wood area in m² using ENU-projected bounding boxes,
+    then widens spacing if the default would exceed the cap.
+    """
+    total_area = 0.0
+    for nat in natural_list:
+        if nat.natural != 'wood':
+            continue
+        geom = nat.geometry
+        if geom is None or geom.IsEmpty():
+            continue
+        # Use bounding box area as upper estimate (simple + reliable)
+        env = geom.GetEnvelope()  # (minX, maxX, minY, maxY)
+        sw = _latlon_to_enu(env[2], env[0], center_lat, center_lon)
+        ne = _latlon_to_enu(env[3], env[1], center_lat, center_lon)
+        bbox_area = abs(ne[0] - sw[0]) * abs(ne[1] - sw[1])
+        # Polygons typically fill ~50-70% of their bbox
+        total_area += bbox_area * 0.5
+
+    if total_area == 0:
+        return _TREE_SPACING_DEFAULT
+
+    # At default spacing, roughly one tree per spacing^2 of polygon area
+    trees_at_default = total_area / (_TREE_SPACING_DEFAULT ** 2)
+    if trees_at_default <= max_trees:
+        return _TREE_SPACING_DEFAULT
+
+    # Widen spacing: trees ~ area / spacing^2
+    spacing = math.sqrt(total_area / max_trees)
+    return spacing
+
+
+def _scatter_trees(natural_list, center_lat, center_lon, terrain,
+                   terrain_bounds, max_trees=_TREE_MAX_COUNT):
+    """Generate SDF tree models scattered within natural=wood polygons.
+
+    Uses a grid-based approach with jitter for natural-looking placement.
+    Spacing is adjusted so total count stays under max_trees.
+    Each tree is a cylinder trunk + cone canopy using SDF primitives.
+    """
+    spacing = _compute_tree_spacing(
+        natural_list, center_lat, center_lon, max_trees)
+    jitter = spacing * 0.375  # scale jitter with spacing
+
+    tree_models = []
+    tree_idx = 0
+    rng = random.Random(42)  # deterministic for reproducible worlds
+
+    for nat in natural_list:
+        if nat.natural != 'wood':
+            continue
+
+        geom = nat.geometry
+        if geom is None or geom.IsEmpty():
+            continue
+
+        # Get polygon bounding box in lat/lon
+        env = geom.GetEnvelope()  # (minX, maxX, minY, maxY)
+        min_lon, max_lon, min_lat, max_lat = env
+
+        # Convert bbox corners to ENU to determine grid extent
+        sw = _latlon_to_enu(min_lat, min_lon, center_lat, center_lon)
+        ne = _latlon_to_enu(max_lat, max_lon, center_lat, center_lon)
+
+        # Grid over the ENU bounding box
+        e = sw[0]
+        while e < ne[0] and tree_idx < max_trees:
+            n = sw[1]
+            while n < ne[1] and tree_idx < max_trees:
+                # Add jitter
+                je = e + rng.uniform(-jitter, jitter)
+                jn = n + rng.uniform(-jitter, jitter)
+
+                # Convert back to lat/lon for point-in-polygon test
+                # Approximate inverse: use linear scaling from center
+                lat_per_m = 1.0 / 111320.0
+                lon_per_m = 1.0 / (111320.0 * math.cos(
+                    math.radians(center_lat)))
+                pt_lat = center_lat + jn * lat_per_m
+                pt_lon = center_lon + je * lon_per_m
+
+                pt = ogr.Geometry(ogr.wkbPoint)
+                pt.AddPoint(pt_lon, pt_lat)
+
+                if geom.Contains(pt):
+                    z = _sample_terrain_elevation(
+                        je, jn, terrain, terrain_bounds)
+
+                    # Randomize tree dimensions
+                    scale = 1.0 + rng.uniform(
+                        -_TREE_HEIGHT_VARIANCE, _TREE_HEIGHT_VARIANCE)
+                    trunk_h = _TRUNK_HEIGHT * scale
+                    canopy_h = _CANOPY_HEIGHT * scale
+                    canopy_r = _CANOPY_RADIUS * scale
+                    trunk_r = _TRUNK_RADIUS * scale
+
+                    # Random yaw for visual variety
+                    yaw = rng.uniform(0, 2 * math.pi)
+
+                    tree_models.append(
+                        f'    <model name="tree_{tree_idx:05d}">\n'
+                        f'      <static>true</static>\n'
+                        f'      <pose>{je:.2f} {jn:.2f} {z:.2f}'
+                        f' 0 0 {yaw:.3f}</pose>\n'
+                        f'      <link name="link">\n'
+                        f'        <visual name="trunk">\n'
+                        f'          <pose>0 0 {trunk_h / 2.0:.2f}'
+                        f' 0 0 0</pose>\n'
+                        f'          <geometry>\n'
+                        f'            <cylinder>\n'
+                        f'              <radius>{trunk_r:.2f}</radius>\n'
+                        f'              <length>{trunk_h:.2f}</length>\n'
+                        f'            </cylinder>\n'
+                        f'          </geometry>\n'
+                        f'          <material>\n'
+                        f'            <ambient>0.4 0.25 0.1 1</ambient>\n'
+                        f'            <diffuse>0.5 0.3 0.15 1</diffuse>\n'
+                        f'          </material>\n'
+                        f'        </visual>\n'
+                        f'        <visual name="canopy">\n'
+                        f'          <pose>0 0 '
+                        f'{trunk_h + canopy_h / 2.0:.2f}'
+                        f' 0 0 0</pose>\n'
+                        f'          <geometry>\n'
+                        f'            <cone>\n'
+                        f'              <radius>{canopy_r:.2f}</radius>\n'
+                        f'              <length>{canopy_h:.2f}</length>\n'
+                        f'            </cone>\n'
+                        f'          </geometry>\n'
+                        f'          <material>\n'
+                        f'            <ambient>0.15 0.35 0.1 1</ambient>\n'
+                        f'            <diffuse>0.2 0.45 0.15 1</diffuse>\n'
+                        f'          </material>\n'
+                        f'        </visual>\n'
+                        f'      </link>\n'
+                        f'    </model>'
+                    )
+                    tree_idx += 1
+
+                n += spacing
+            e += spacing
+
+    return tree_models
+
+
 def generate_feature_models(
     features, center_lat, center_lon,
     terrain=None, terrain_bounds=None, debug=False,
@@ -1164,6 +1324,8 @@ def generate_feature_models(
     max_wall_segments=None,
     osm_man_made=None,
     osm_bridge_roads=None,
+    osm_natural=None,
+    max_trees=_TREE_MAX_COUNT,
 ):
     """Convert S57 features to grouped SDF <model> XML strings.
 
@@ -1646,10 +1808,20 @@ def generate_feature_models(
         'pylons': pylons,
         'coastlines': coastlines,
     }
+    # Trees from OSM natural=wood polygons
+    tree_models = []
+    if osm_natural and 'trees' not in skip and max_trees > 0:
+        tree_models = _scatter_trees(
+            osm_natural, center_lat, center_lon, terrain, terrain_bounds,
+            max_trees=max_trees)
+        if tree_models:
+            print(f"  Generated {len(tree_models)} trees")
+
     osm_types = {
         'buildings': osm_buildings,
         'marine': marine_models,
         'bridges': osm_bridge_models,
+        'trees': tree_models,
     }
 
     return {
