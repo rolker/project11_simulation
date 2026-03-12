@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Fetch OpenStreetMap building data via the Overpass API."""
+"""Fetch OpenStreetMap building and terrain feature data via the Overpass API."""
 
 import hashlib
 import json
@@ -21,6 +21,8 @@ import os
 import tempfile
 from dataclasses import dataclass, field
 from typing import List, Optional
+
+import time
 
 import requests
 from osgeo import ogr
@@ -31,7 +33,17 @@ ogr.UseExceptions()
 
 logger = logging.getLogger(__name__)
 
-_OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+# Overpass API endpoints, tried in order.  The primary is the main public
+# instance; the others are community mirrors used as fallbacks.
+_OVERPASS_ENDPOINTS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+]
+
+# Retry parameters
+_MAX_RETRIES = 3
+_RETRY_BACKOFF_BASE = 5  # seconds; actual wait = base * 2^attempt
 
 _DEFAULT_CACHE_DIR = os.path.join(
     os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")),
@@ -52,26 +64,91 @@ class OsmBuilding:
 
 
 @dataclass
+class OsmLanduse:
+    """A landuse polygon from OpenStreetMap."""
+
+    geometry: ogr.Geometry  # Polygon in WGS84
+    landuse: str = ''  # e.g. residential, commercial, grass, forest
+
+
+@dataclass
+class OsmRoad:
+    """A road linestring from OpenStreetMap."""
+
+    geometry: ogr.Geometry  # LineString in WGS84
+    highway: str = ''  # e.g. secondary, residential, service, footway
+    bridge: bool = False  # True if bridge=yes tag is present
+    layer: int = 0  # from layer= tag (bridges are typically layer=1)
+
+
+@dataclass
+class OsmParking:
+    """A parking area polygon from OpenStreetMap."""
+
+    geometry: ogr.Geometry  # Polygon in WGS84
+
+
+@dataclass
+class OsmNatural:
+    """A natural area polygon from OpenStreetMap."""
+
+    geometry: ogr.Geometry  # Polygon in WGS84
+    natural: str = ''  # e.g. wood, wetland, beach, scrub
+
+
+@dataclass
+class OsmManMade:
+    """A man-made marine infrastructure feature from OpenStreetMap."""
+
+    geometry: ogr.Geometry  # Polygon or LineString in WGS84
+    man_made: str = ''  # e.g. pier, quay, breakwater, groyne
+    floating: Optional[bool] = None  # True/False from floating= tag, None if absent
+
+
+@dataclass
 class OsmFeatures:
     """Collection of features fetched from OpenStreetMap."""
 
     buildings: List[OsmBuilding] = field(default_factory=list)
+    landuse: List[OsmLanduse] = field(default_factory=list)
+    roads: List[OsmRoad] = field(default_factory=list)
+    parking: List[OsmParking] = field(default_factory=list)
+    natural: List[OsmNatural] = field(default_factory=list)
+    man_made: List[OsmManMade] = field(default_factory=list)
 
 
-def _cache_key(bbox: BoundingBox) -> str:
+def _cache_key(bbox: BoundingBox, terrain: bool = False) -> str:
     """Generate a deterministic cache key from bbox."""
-    s = f"osm:{bbox.south:.6f},{bbox.west:.6f},{bbox.north:.6f},{bbox.east:.6f}"
+    prefix = "osm_terrain_v2" if terrain else "osm"
+    s = f"{prefix}:{bbox.south:.6f},{bbox.west:.6f},{bbox.north:.6f},{bbox.east:.6f}"
     return hashlib.md5(s.encode()).hexdigest()
 
 
-def _build_overpass_query(bbox: BoundingBox) -> str:
-    """Build Overpass QL query for buildings in the bounding box."""
+def _build_overpass_query(bbox: BoundingBox,
+                          fetch_terrain_features: bool = False) -> str:
+    """Build Overpass QL query for buildings (and terrain features) in bbox."""
     b = f"{bbox.south},{bbox.west},{bbox.north},{bbox.east}"
+    if not fetch_terrain_features:
+        return (
+            "[out:json][timeout:120];\n"
+            "(\n"
+            f'  way["building"]({b});\n'
+            f'  relation["building"]({b});\n'
+            ");\n"
+            "out geom;\n"
+        )
+    # Combined query: buildings + landuse + roads + parking + natural + marine
     return (
         "[out:json][timeout:120];\n"
         "(\n"
         f'  way["building"]({b});\n'
         f'  relation["building"]({b});\n'
+        f'  way["landuse"]({b});\n'
+        f'  way["highway"]({b});\n'
+        f'  way["amenity"="parking"]({b});\n'
+        f'  way["natural"]({b});\n'
+        f'  way["man_made"~"pier|quay|breakwater|groyne"]({b});\n'
+        f'  way["waterway"="dock"]({b});\n'
         ");\n"
         "out geom;\n"
     )
@@ -161,40 +238,179 @@ def _parse_element(element: dict) -> Optional[OsmBuilding]:
     )
 
 
+def _coords_to_linestring(coords: list) -> Optional[ogr.Geometry]:
+    """Convert a list of {'lat': ..., 'lon': ...} dicts to an OGR LineString.
+
+    Returns None if fewer than 2 points.
+    """
+    if len(coords) < 2:
+        return None
+    line = ogr.Geometry(ogr.wkbLineString)
+    for pt in coords:
+        line.AddPoint(pt["lon"], pt["lat"])
+    return line
+
+
+def _parse_terrain_element(element: dict, features: OsmFeatures):
+    """Parse a terrain-related element (landuse, road, parking, natural)."""
+    tags = element.get("tags", {})
+    geom_coords = element.get("geometry")
+    if not geom_coords:
+        return
+
+    # Marine infrastructure takes priority (piers may also have landuse tags)
+    man_made_type = tags.get("man_made", "")
+    if man_made_type in ("pier", "quay", "breakwater", "groyne"):
+        floating_tag = tags.get("floating")
+        floating = None
+        if floating_tag == "yes":
+            floating = True
+        elif floating_tag == "no":
+            floating = False
+        # Only treat as polygon if the way is actually closed (first == last node)
+        is_closed = (len(geom_coords) >= 4
+                     and geom_coords[0]["lat"] == geom_coords[-1]["lat"]
+                     and geom_coords[0]["lon"] == geom_coords[-1]["lon"])
+        if is_closed:
+            polygon = _coords_to_polygon(geom_coords)
+            if polygon is not None and polygon.IsValid():
+                features.man_made.append(OsmManMade(
+                    geometry=polygon, man_made=man_made_type,
+                    floating=floating,
+                ))
+                return
+        linestring = _coords_to_linestring(geom_coords)
+        if linestring is not None:
+            features.man_made.append(OsmManMade(
+                geometry=linestring, man_made=man_made_type,
+                floating=floating,
+            ))
+        return
+
+    # Landuse polygons
+    if "landuse" in tags and "building" not in tags:
+        polygon = _coords_to_polygon(geom_coords)
+        if polygon is not None and polygon.IsValid():
+            features.landuse.append(OsmLanduse(
+                geometry=polygon,
+                landuse=tags.get("landuse", ""),
+            ))
+        return
+
+    # Roads (linestrings)
+    if "highway" in tags:
+        linestring = _coords_to_linestring(geom_coords)
+        if linestring is not None:
+            layer_val = 0
+            try:
+                layer_val = int(tags.get("layer", "0"))
+            except ValueError:
+                pass
+            features.roads.append(OsmRoad(
+                geometry=linestring,
+                highway=tags.get("highway", ""),
+                bridge=tags.get("bridge") == "yes",
+                layer=layer_val,
+            ))
+        return
+
+    # Parking areas
+    if tags.get("amenity") == "parking":
+        polygon = _coords_to_polygon(geom_coords)
+        if polygon is not None and polygon.IsValid():
+            features.parking.append(OsmParking(geometry=polygon))
+        return
+
+    # Natural areas
+    if "natural" in tags and "building" not in tags:
+        polygon = _coords_to_polygon(geom_coords)
+        if polygon is not None and polygon.IsValid():
+            features.natural.append(OsmNatural(
+                geometry=polygon,
+                natural=tags.get("natural", ""),
+            ))
+        return
+
+    # Waterway=dock (water basin) — store as natural water area
+    if tags.get("waterway") == "dock":
+        polygon = _coords_to_polygon(geom_coords)
+        if polygon is not None and polygon.IsValid():
+            features.natural.append(OsmNatural(
+                geometry=polygon, natural="water",
+            ))
+        return
+
+
+def _fetch_with_retries(query: str) -> dict:
+    """Fetch Overpass data, retrying across endpoints with backoff.
+
+    Tries each endpoint up to ``_MAX_RETRIES`` times with exponential
+    backoff before moving to the next endpoint.  Raises the last
+    encountered exception if all endpoints and retries are exhausted.
+    """
+    last_exc = None
+    for endpoint in _OVERPASS_ENDPOINTS:
+        for attempt in range(_MAX_RETRIES):
+            try:
+                logger.info(
+                    "Querying %s (attempt %d/%d)...",
+                    endpoint, attempt + 1, _MAX_RETRIES,
+                )
+                response = requests.get(
+                    endpoint,
+                    params={"data": query},
+                    timeout=(30, 180),
+                )
+                response.raise_for_status()
+                return response.json()
+            except (requests.RequestException, ValueError) as exc:
+                last_exc = exc
+                wait = _RETRY_BACKOFF_BASE * (2 ** attempt)
+                logger.warning(
+                    "%s attempt %d failed: %s  Retrying in %ds...",
+                    endpoint, attempt + 1, exc, wait,
+                )
+                time.sleep(wait)
+        logger.warning(
+            "All %d retries exhausted for %s, trying next endpoint...",
+            _MAX_RETRIES, endpoint,
+        )
+    raise last_exc  # type: ignore[misc]
+
+
 def fetch_osm_features(
     bbox: BoundingBox,
     cache_dir: Optional[str] = None,
+    fetch_terrain_features: bool = False,
 ) -> OsmFeatures:
-    """Fetch OSM building features for a bounding box via Overpass API.
+    """Fetch OSM features for a bounding box via Overpass API.
 
     Args:
         bbox: Geographic bounding box in WGS84 degrees.
         cache_dir: Directory to cache downloaded data. Defaults to
             ~/.cache/marine_charts_to_gazebo_world/.
+        fetch_terrain_features: If True, also fetch landuse, roads,
+            parking, and natural areas for terrain texturing.
 
     Returns:
-        OsmFeatures with parsed buildings.
+        OsmFeatures with parsed buildings (and terrain features if requested).
     """
     if cache_dir is None:
         cache_dir = _DEFAULT_CACHE_DIR
     os.makedirs(cache_dir, exist_ok=True)
 
-    cache_file = os.path.join(cache_dir, f"osm_{_cache_key(bbox)}.json")
+    cache_file = os.path.join(
+        cache_dir,
+        f"osm_{_cache_key(bbox, terrain=fetch_terrain_features)}.json",
+    )
 
     if os.path.exists(cache_file):
         logger.info("Using cached OSM data: %s", cache_file)
         with open(cache_file) as f:
             data = json.load(f)
     else:
-        query = _build_overpass_query(bbox)
-        logger.info("Querying Overpass API...")
-        response = requests.get(
-            _OVERPASS_URL,
-            params={"data": query},
-            timeout=(30, 180),
-        )
-        response.raise_for_status()
-        data = response.json()
+        query = _build_overpass_query(bbox, fetch_terrain_features)
+        data = _fetch_with_retries(query)
 
         # Write cache atomically
         fd, tmp_path = tempfile.mkstemp(
@@ -218,5 +434,7 @@ def fetch_osm_features(
         building = _parse_element(element)
         if building is not None:
             features.buildings.append(building)
+        if fetch_terrain_features:
+            _parse_terrain_element(element, features)
 
     return features

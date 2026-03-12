@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Match S57 buildings to OSM buildings and enrich with OSM metadata."""
+"""Match S57 features to OSM features and enrich with OSM metadata."""
 
 import logging
 import math
@@ -20,7 +20,7 @@ import math
 from osgeo import ogr
 
 from .osm_fetcher import OsmFeatures
-from .s57_reader import Building, S57Features
+from .s57_reader import Building, S57Features, ShoreCon
 
 ogr.UseExceptions()
 
@@ -64,6 +64,7 @@ def _iou(geom_a: ogr.Geometry, geom_b: ogr.Geometry) -> float:
 def match_and_enrich(
     s57_features: S57Features,
     osm_features: OsmFeatures,
+    add_unmatched: bool = True,
 ) -> tuple:
     """Match S57 buildings to OSM buildings and enrich with OSM data.
 
@@ -71,12 +72,16 @@ def match_and_enrich(
     and IoU. When matched, copies OSM height, material, and colour onto
     the S57 Building dataclass, and replaces the footprint polygon.
 
-    Unmatched OSM buildings are converted to S57 Building objects and
-    appended to the buildings list.
+    When *add_unmatched* is True (the default), unmatched OSM buildings
+    are converted to S57 Building objects and appended to the buildings
+    list.
 
     Args:
         s57_features: S57Features with buildings to enrich.
         osm_features: OsmFeatures with OSM buildings to match against.
+        add_unmatched: If True, add unmatched OSM buildings as new
+            S57 Building objects. Set False to only enrich existing
+            S57 buildings without adding new ones.
 
     Returns:
         Tuple of (enriched S57Features, number of matched buildings,
@@ -133,6 +138,8 @@ def match_and_enrich(
 
     # Add unmatched OSM buildings as new Building objects
     n_added = 0
+    if not add_unmatched:
+        return s57_features, n_matched, n_added
     for idx, osm_building in enumerate(osm_features.buildings):
         if idx in matched_osm_indices:
             continue
@@ -150,7 +157,119 @@ def match_and_enrich(
             osm_height=osm_height,
             osm_material=osm_building.material,
             osm_colour=osm_building.colour,
+            osm_only=True,
         ))
         n_added += 1
 
     return s57_features, n_matched, n_added
+
+
+# --- Pier matching ---
+
+# Maximum distance (degrees) between an S57 pier linestring and an OSM
+# pier polygon to consider them the same physical feature.
+# ~5m ≈ 0.00005 degrees at mid-latitudes.
+_MAX_PIER_DISTANCE_DEG = 0.00005
+
+# Coarse centroid filter to avoid expensive Distance() calls.
+# ~500m at mid-latitudes.
+_MAX_PIER_CENTROID_DISTANCE_DEG = 0.005
+
+
+def match_piers(
+    s57_features: S57Features,
+    osm_features: OsmFeatures,
+    add_unmatched: bool = True,
+) -> tuple:
+    """Replace S57 SLCONS pier features with OSM man_made=pier polygons.
+
+    S57 represents piers as a combination of polygon features and edge
+    linestrings.  OSM has single polygon outlines for each pier.
+    This function finds all S57 pier features (catslc=4) within ~5m of
+    each OSM pier polygon and replaces them with a single ShoreCon
+    carrying the OSM polygon.
+
+    When *add_unmatched* is True, unmatched OSM pier polygons are added
+    as new ShoreCon objects.
+
+    Returns:
+        Tuple of (enriched S57Features, n_s57_replaced, n_osm_added,
+        set of matched OSM man_made indices).
+    """
+    # Collect OSM pier polygons (with their index into osm_features.man_made)
+    osm_piers = []
+    for idx, mm in enumerate(osm_features.man_made):
+        if mm.man_made != 'pier':
+            continue
+        geom_type = mm.geometry.GetGeometryType() & 0xFF
+        if geom_type not in (3, 6):  # only Polygon / MultiPolygon
+            continue
+        osm_piers.append((idx, mm))
+
+    if not osm_piers:
+        return s57_features, 0, 0, set()
+
+    matched_osm_indices = set()
+    suppress_sc_indices = set()  # S57 shore_constructions indices to remove
+    replacements = []  # OSM polygons to add as replacements
+    n_replaced = 0
+
+    # For each OSM pier polygon, find ALL nearby S57 pier features
+    for osm_idx, osm_mm in osm_piers:
+        matched_any = False
+
+        for sc_idx, sc in enumerate(s57_features.shore_constructions):
+            if sc.catslc != 4:
+                continue
+            if sc_idx in suppress_sc_indices:
+                continue
+
+            # Coarse centroid filter
+            cdist = _centroid_distance_deg(sc.geometry, osm_mm.geometry)
+            if cdist > _MAX_PIER_CENTROID_DISTANCE_DEG:
+                continue
+
+            try:
+                dist = sc.geometry.Distance(osm_mm.geometry)
+            except Exception:
+                continue
+
+            if dist < _MAX_PIER_DISTANCE_DEG:
+                suppress_sc_indices.add(sc_idx)
+                matched_any = True
+                n_replaced += 1
+                logger.debug(
+                    "Suppressing S57 pier [%d] for OSM pier (dist=%.6f)",
+                    sc_idx, dist,
+                )
+
+        if matched_any:
+            matched_osm_indices.add(osm_idx)
+            replacements.append(ShoreCon(
+                geometry=osm_mm.geometry.Clone(),
+                catslc=4,
+                osm_only=True,
+            ))
+
+    # Remove suppressed S57 features and add OSM replacements
+    if suppress_sc_indices:
+        s57_features.shore_constructions = [
+            sc for idx, sc in enumerate(s57_features.shore_constructions)
+            if idx not in suppress_sc_indices
+        ]
+    s57_features.shore_constructions.extend(replacements)
+
+    # Add unmatched OSM piers as new ShoreCon objects
+    n_added = 0
+    if add_unmatched:
+        for osm_idx, osm_mm in osm_piers:
+            if osm_idx in matched_osm_indices:
+                continue
+            s57_features.shore_constructions.append(ShoreCon(
+                geometry=osm_mm.geometry.Clone(),
+                catslc=4,
+                osm_only=True,
+            ))
+            n_added += 1
+
+    return s57_features, n_replaced, n_added, matched_osm_indices

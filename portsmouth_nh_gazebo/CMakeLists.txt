@@ -75,6 +75,9 @@ add_gazebo_world(portsmouth_nh_isles_of_shoals
 add_gazebo_world(portsmouth_nh_portsmouth_to_isles
   "${CMAKE_CURRENT_SOURCE_DIR}/config/portsmouth_to_isles.yaml")
 
+add_gazebo_world(portsmouth_nh_unh_pier
+  "${CMAKE_CURRENT_SOURCE_DIR}/config/unh_pier.yaml")
+
 # ---------- Install ----------
 
 # Launch files

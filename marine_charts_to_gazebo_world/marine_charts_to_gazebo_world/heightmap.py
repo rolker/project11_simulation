@@ -15,6 +15,7 @@
 """Generate Gazebo-compatible heightmap PNG from terrain data."""
 
 import os
+from typing import Optional
 
 import numpy as np
 from PIL import Image
@@ -25,6 +26,8 @@ def terrain_to_heightmap(
     terrain_info: dict,
     output_dir: str,
     model_name: str = "terrain",
+    land_texture: Optional[Image.Image] = None,
+    osm_tex_size: Optional[float] = None,
 ) -> dict:
     """Convert a terrain elevation grid to a 16-bit PNG heightmap.
 
@@ -37,6 +40,13 @@ def terrain_to_heightmap(
         output_dir: Directory to write heightmap files into.
         model_name: Gazebo model name for the terrain. Must be globally
             unique across all worlds (e.g. 'portsmouth_nh_harbor_terrain').
+        land_texture: Optional PIL Image to use as land diffuse texture.
+            If provided, replaces the 16x16 placeholder. The SDF texture
+            size is set to ``osm_tex_size`` (max(size_x, size_y)) for
+            correct UV mapping on non-square heightmaps.
+        osm_tex_size: Texture tiling size in meters. Required when
+            ``land_texture`` is provided so the model SDF is written
+            with the correct ``<size>`` for 1:1 UV mapping.
 
     Returns:
         dict with keys needed for SDF generation:
@@ -84,7 +94,8 @@ def terrain_to_heightmap(
     img.save(heightmap_path)
 
     # Generate terrain textures required by OGRE2's heightmap shader
-    _write_terrain_textures(model_dir, terrain_clean, terrain_info)
+    _write_terrain_textures(model_dir, terrain_clean, terrain_info,
+                            land_texture=land_texture)
 
     # Write model.config
     _write_model_config(model_dir, model_name)
@@ -101,19 +112,30 @@ def terrain_to_heightmap(
         "pos_z": min_elev,
         "min_elevation": min_elev,
         "max_elevation": max_elev,
+        "has_osm_texture": land_texture is not None,
     }
+    if osm_tex_size is not None:
+        heightmap_info["osm_tex_size"] = osm_tex_size
     _write_model_sdf(model_dir, heightmap_info)
 
     return heightmap_info
 
 
 def _write_terrain_textures(model_dir: str, terrain: np.ndarray,
-                            terrain_info: dict):
+                            terrain_info: dict,
+                            land_texture: Optional[Image.Image] = None):
     """Generate diffuse and normal map textures for the heightmap.
 
     OGRE2's terrain shader requires at least one texture layer in the
     visual heightmap; without it the generated shader fails to compile.
     Normal maps are computed from the terrain gradient for proper shading.
+
+    Args:
+        model_dir: Directory to write texture files into.
+        terrain: Cleaned elevation grid.
+        terrain_info: dict with size_x, size_y from build_terrain().
+        land_texture: Optional high-resolution land texture from OSM
+            rasterization. If None, a 16x16 solid-color placeholder is used.
     """
     textures_dir = os.path.join(model_dir, "textures")
     os.makedirs(textures_dir, exist_ok=True)
@@ -122,9 +144,12 @@ def _write_terrain_textures(model_dir: str, terrain: np.ndarray,
     diffuse = Image.new("RGB", (16, 16), (160, 145, 120))
     diffuse.save(os.path.join(textures_dir, "seafloor_diffuse.png"))
 
-    # Land diffuse: muted green-brown
-    land = Image.new("RGB", (16, 16), (120, 140, 95))
-    land.save(os.path.join(textures_dir, "land_diffuse.png"))
+    # Land diffuse: use provided texture or placeholder
+    if land_texture is not None:
+        land_texture.save(os.path.join(textures_dir, "land_diffuse.png"))
+    else:
+        land = Image.new("RGB", (16, 16), (120, 140, 95))
+        land.save(os.path.join(textures_dir, "land_diffuse.png"))
 
     # Compute normal map from terrain gradients
     # Pixel spacing in meters
@@ -178,6 +203,14 @@ def _write_model_sdf(model_dir: str, info: dict):
     blend_height = -info["pos_z"]
 
     mn = info['model_name']
+
+    # Land texture <size>: use osm_tex_size (max(size_x, size_y)) for
+    # correct UV mapping on non-square heightmaps, otherwise tile at 10m.
+    if info.get("has_osm_texture"):
+        land_tex_size = f"{info.get('osm_tex_size', info['size_x']):.1f}"
+    else:
+        land_tex_size = "10"
+
     sdf = f"""\
 <?xml version="1.0"?>
 <sdf version="1.9">
@@ -196,7 +229,7 @@ def _write_model_sdf(model_dir: str, info: dict):
             <texture>
               <diffuse>model://{mn}/textures/land_diffuse.png</diffuse>
               <normal>model://{mn}/textures/terrain_normal.png</normal>
-              <size>10</size>
+              <size>{land_tex_size}</size>
             </texture>
             <blend>
               <min_height>{blend_height:.1f}</min_height>

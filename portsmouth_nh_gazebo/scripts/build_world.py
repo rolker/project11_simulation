@@ -137,6 +137,10 @@ def main():
     # OSM enrichment (optional)
     if config.get('osm'):
         gen_args.append('--osm')
+    if config.get('no_osm_buildings'):
+        gen_args.append('--no-osm-buildings')
+    if config.get('osm_matching'):
+        gen_args.append('--osm-matching')
 
     # ETOPO bathymetry (optional)
     if config.get('fetch_etopo'):
@@ -162,6 +166,11 @@ def main():
     max_segs = config.get('max_wall_segments')
     if max_segs is not None:
         gen_args.extend(['--max-wall-segments', str(max_segs)])
+
+    # Tree count cap (optional)
+    max_trees = config.get('max_trees')
+    if max_trees is not None:
+        gen_args.extend(['--max-trees', str(max_trees)])
 
     # ENC root: config override takes precedence, then env var
     enc_root = config.get('enc_root') or os.environ.get('ROS_S57_ENC_ROOT')

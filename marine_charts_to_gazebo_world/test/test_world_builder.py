@@ -165,7 +165,7 @@ class TestGenerateWorldSdf:
                 center_lon=-70.71,
                 output_dir=tmpdir,
                 heightmap_info=heightmap_info,
-                feature_models=feature_xml,
+                s57_feature_models=feature_xml,
             )
             with open(sdf_path) as f:
                 content = f.read()
