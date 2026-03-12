@@ -139,6 +139,8 @@ def main():
         gen_args.append('--osm')
     if config.get('no_osm_buildings'):
         gen_args.append('--no-osm-buildings')
+    if config.get('osm_matching'):
+        gen_args.append('--osm-matching')
 
     # ETOPO bathymetry (optional)
     if config.get('fetch_etopo'):

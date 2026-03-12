@@ -177,6 +177,13 @@ def parse_args(argv=None):
         "terrain textures.",
     )
     parser.add_argument(
+        "--osm-matching",
+        action="store_true",
+        help="When used with --osm, match S57 and OSM features and merge "
+        "them (e.g. enrich S57 buildings with OSM heights/materials). "
+        "By default, both data sources are rendered independently.",
+    )
+    parser.add_argument(
         "--skip-categories",
         help="Comma-separated list of feature categories to skip. "
         "Valid categories: buildings, pontoons, bridges, buoys, beacons, "
@@ -338,7 +345,7 @@ def main(argv=None):
                   f"{len(osm_features.parking)} parking, "
                   f"{len(osm_features.natural)} natural, "
                   f"{len(osm_features.man_made)} marine infrastructure")
-            if s57_features is not None:
+            if s57_features is not None and args.osm_matching:
                 s57_features, n_matched, n_added = match_and_enrich(
                     s57_features, osm_features,
                     add_unmatched=not args.no_osm_buildings,
@@ -367,6 +374,8 @@ def main(argv=None):
                             mm for idx, mm in enumerate(osm_features.man_made)
                             if idx not in matched_pier_indices
                         ]
+            elif s57_features is not None and not args.osm_matching:
+                print("  Rendering S57 and OSM features independently")
         except Exception as e:
             print(f"  Warning: OSM enrichment failed, skipping: {e}")
             osm_features = None
@@ -496,6 +505,8 @@ def main(argv=None):
             simplify_tolerance=simplify_tol,
             max_wall_segments=args.max_wall_segments,
             osm_man_made=osm_features.man_made if osm_features else None,
+            osm_bridge_roads=[r for r in osm_features.roads if r.bridge]
+            if osm_features else None,
         )
         s57_feature_sdf = feature_groups['s57']
         osm_feature_sdf = feature_groups['osm']
