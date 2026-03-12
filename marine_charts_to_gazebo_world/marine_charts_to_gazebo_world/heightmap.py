@@ -27,6 +27,7 @@ def terrain_to_heightmap(
     output_dir: str,
     model_name: str = "terrain",
     land_texture: Optional[Image.Image] = None,
+    osm_tex_size: Optional[float] = None,
 ) -> dict:
     """Convert a terrain elevation grid to a 16-bit PNG heightmap.
 
@@ -40,8 +41,12 @@ def terrain_to_heightmap(
         model_name: Gazebo model name for the terrain. Must be globally
             unique across all worlds (e.g. 'portsmouth_nh_harbor_terrain').
         land_texture: Optional PIL Image to use as land diffuse texture.
-            If provided, replaces the 16x16 placeholder and sets the SDF
-            texture size to match terrain dimensions for 1:1 mapping.
+            If provided, replaces the 16x16 placeholder. The SDF texture
+            size is set to ``osm_tex_size`` (max(size_x, size_y)) for
+            correct UV mapping on non-square heightmaps.
+        osm_tex_size: Texture tiling size in meters. Required when
+            ``land_texture`` is provided so the model SDF is written
+            with the correct ``<size>`` for 1:1 UV mapping.
 
     Returns:
         dict with keys needed for SDF generation:
@@ -109,6 +114,8 @@ def terrain_to_heightmap(
         "max_elevation": max_elev,
         "has_osm_texture": land_texture is not None,
     }
+    if osm_tex_size is not None:
+        heightmap_info["osm_tex_size"] = osm_tex_size
     _write_model_sdf(model_dir, heightmap_info)
 
     return heightmap_info
@@ -197,8 +204,8 @@ def _write_model_sdf(model_dir: str, info: dict):
 
     mn = info['model_name']
 
-    # Land texture <size>: use terrain dimensions for 1:1 mapping when
-    # an OSM-rasterized texture is present, otherwise tile at 10m.
+    # Land texture <size>: use osm_tex_size (max(size_x, size_y)) for
+    # correct UV mapping on non-square heightmaps, otherwise tile at 10m.
     if info.get("has_osm_texture"):
         land_tex_size = f"{info.get('osm_tex_size', info['size_x']):.1f}"
     else:

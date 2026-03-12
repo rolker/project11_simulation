@@ -20,7 +20,7 @@ import re
 
 from osgeo import ogr
 
-from .coordinates import latlon_to_enu
+from .coordinates import enu_to_latlon, latlon_to_enu
 
 # Default extrusion heights by OBJL code
 _BUILDING_HEIGHTS = {
@@ -1246,12 +1246,8 @@ def _scatter_trees(natural_list, center_lat, center_lon, terrain,
                 jn = n + rng.uniform(-jitter, jitter)
 
                 # Convert back to lat/lon for point-in-polygon test
-                # Approximate inverse: use linear scaling from center
-                lat_per_m = 1.0 / 111320.0
-                lon_per_m = 1.0 / (111320.0 * math.cos(
-                    math.radians(center_lat)))
-                pt_lat = center_lat + jn * lat_per_m
-                pt_lon = center_lon + je * lon_per_m
+                pt_lat, pt_lon = enu_to_latlon(
+                    je, jn, center_lat, center_lon)
 
                 pt = ogr.Geometry(ogr.wkbPoint)
                 pt.AddPoint(pt_lon, pt_lat)

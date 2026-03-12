@@ -27,7 +27,7 @@ from .heightmap import terrain_to_heightmap
 from .osm_fetcher import fetch_osm_features
 from .osm_matcher import match_and_enrich, match_piers
 from .osm_texture import rasterize_osm_texture
-from .s57_reader import BoundingBox, read_enc_directory
+from .s57_reader import BoundingBox, S57Features, read_enc_directory
 from .terrain import build_terrain
 from .world_builder import generate_world_sdf
 
@@ -218,7 +218,7 @@ def parse_args(argv=None):
 
 def _build_single_tile(args, bbox, grid_size, s57_features,
                        ref_lat, ref_lon, model_name="terrain",
-                       land_texture=None):
+                       land_texture=None, osm_tex_size=None):
     """Build terrain and heightmap for a single tile.
 
     Returns (terrain_array, terrain_info, heightmap_info).
@@ -252,7 +252,7 @@ def _build_single_tile(args, bbox, grid_size, s57_features,
     print(f"  Generating heightmap for {model_name}...")
     heightmap_info = terrain_to_heightmap(
         terrain, terrain_info, args.output_dir, model_name=model_name,
-        land_texture=land_texture,
+        land_texture=land_texture, osm_tex_size=osm_tex_size,
     )
     print(f"    Saved to {heightmap_info['heightmap_path']}")
 
@@ -422,10 +422,8 @@ def main(argv=None):
                 args, tile_bbox, grid_size, s57_features,
                 ref_lat=ref_lat, ref_lon=ref_lon,
                 model_name=f"{args.world_name}_terrain_{name}",
-                land_texture=land_texture,
+                land_texture=land_texture, osm_tex_size=osm_tex_size,
             )
-            if osm_tex_size is not None:
-                heightmap_info["osm_tex_size"] = osm_tex_size
             # Embed ENU offset directly in the heightmap <pos> element
             # (Gazebo's OGRE2 heightmap renderer uses <pos>, not model pose)
             enu_x, enu_y = _bbox_center_enu(
@@ -433,7 +431,8 @@ def main(argv=None):
             )
             heightmap_info["pos_x"] = enu_x
             heightmap_info["pos_y"] = enu_y
-            # Rewrite model.sdf with updated position
+            # Rewrite model.sdf with updated position (must happen after
+            # _build_single_tile since ENU offset isn't known beforehand)
             from .heightmap import _write_model_sdf
             model_dir = os.path.join(args.output_dir, heightmap_info["model_name"])
             _write_model_sdf(model_dir, heightmap_info)
@@ -472,15 +471,8 @@ def main(argv=None):
             args, tile_bbox, grid_size, s57_features,
             ref_lat=ref_lat, ref_lon=ref_lon,
             model_name=f"{args.world_name}_terrain",
-            land_texture=land_texture,
+            land_texture=land_texture, osm_tex_size=osm_tex_size,
         )
-        if osm_tex_size is not None:
-            heightmap_info["osm_tex_size"] = osm_tex_size
-            # Rewrite model.sdf with updated tex_size
-            from .heightmap import _write_model_sdf
-            model_dir = os.path.join(args.output_dir,
-                                     heightmap_info["model_name"])
-            _write_model_sdf(model_dir, heightmap_info)
         heightmap_result = heightmap_info
 
     # Step 5: Generate feature models (optional)
@@ -510,10 +502,11 @@ def main(argv=None):
             'max_north': n_ne,
         }
 
-    if not args.no_features and s57_features is not None:
+    if not args.no_features and (s57_features is not None
+                                    or osm_features is not None):
         print("Generating feature models...")
         feature_groups = generate_feature_models(
-            s57_features, ref_lat, ref_lon,
+            s57_features or S57Features(), ref_lat, ref_lon,
             terrain=first_terrain, terrain_bounds=terrain_bounds,
             debug=args.debug_features,
             skip_categories=skip_categories,
