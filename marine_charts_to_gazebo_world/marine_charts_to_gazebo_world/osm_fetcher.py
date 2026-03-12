@@ -77,6 +77,8 @@ class OsmRoad:
 
     geometry: ogr.Geometry  # LineString in WGS84
     highway: str = ''  # e.g. secondary, residential, service, footway
+    bridge: bool = False  # True if bridge=yes tag is present
+    layer: int = 0  # from layer= tag (bridges are typically layer=1)
 
 
 @dataclass
@@ -100,6 +102,7 @@ class OsmManMade:
 
     geometry: ogr.Geometry  # Polygon or LineString in WGS84
     man_made: str = ''  # e.g. pier, quay, breakwater, groyne
+    floating: Optional[bool] = None  # True/False from floating= tag, None if absent
 
 
 @dataclass
@@ -255,6 +258,35 @@ def _parse_terrain_element(element: dict, features: OsmFeatures):
     if not geom_coords:
         return
 
+    # Marine infrastructure takes priority (piers may also have landuse tags)
+    man_made_type = tags.get("man_made", "")
+    if man_made_type in ("pier", "quay", "breakwater", "groyne"):
+        floating_tag = tags.get("floating")
+        floating = None
+        if floating_tag == "yes":
+            floating = True
+        elif floating_tag == "no":
+            floating = False
+        # Only treat as polygon if the way is actually closed (first == last node)
+        is_closed = (len(geom_coords) >= 4
+                     and geom_coords[0]["lat"] == geom_coords[-1]["lat"]
+                     and geom_coords[0]["lon"] == geom_coords[-1]["lon"])
+        if is_closed:
+            polygon = _coords_to_polygon(geom_coords)
+            if polygon is not None and polygon.IsValid():
+                features.man_made.append(OsmManMade(
+                    geometry=polygon, man_made=man_made_type,
+                    floating=floating,
+                ))
+                return
+        linestring = _coords_to_linestring(geom_coords)
+        if linestring is not None:
+            features.man_made.append(OsmManMade(
+                geometry=linestring, man_made=man_made_type,
+                floating=floating,
+            ))
+        return
+
     # Landuse polygons
     if "landuse" in tags and "building" not in tags:
         polygon = _coords_to_polygon(geom_coords)
@@ -269,9 +301,16 @@ def _parse_terrain_element(element: dict, features: OsmFeatures):
     if "highway" in tags:
         linestring = _coords_to_linestring(geom_coords)
         if linestring is not None:
+            layer_val = 0
+            try:
+                layer_val = int(tags.get("layer", "0"))
+            except ValueError:
+                pass
             features.roads.append(OsmRoad(
                 geometry=linestring,
                 highway=tags.get("highway", ""),
+                bridge=tags.get("bridge") == "yes",
+                layer=layer_val,
             ))
         return
 
@@ -290,23 +329,6 @@ def _parse_terrain_element(element: dict, features: OsmFeatures):
                 geometry=polygon,
                 natural=tags.get("natural", ""),
             ))
-        return
-
-    # Marine infrastructure (man_made: pier, quay, breakwater, groyne)
-    man_made_type = tags.get("man_made", "")
-    if man_made_type in ("pier", "quay", "breakwater", "groyne"):
-        # Try polygon first, fall back to linestring
-        polygon = _coords_to_polygon(geom_coords)
-        if polygon is not None and polygon.IsValid():
-            features.man_made.append(OsmManMade(
-                geometry=polygon, man_made=man_made_type,
-            ))
-        else:
-            linestring = _coords_to_linestring(geom_coords)
-            if linestring is not None:
-                features.man_made.append(OsmManMade(
-                    geometry=linestring, man_made=man_made_type,
-                ))
         return
 
     # Waterway=dock (water basin) — store as natural water area
