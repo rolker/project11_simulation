@@ -159,7 +159,7 @@ def rasterize_osm_texture(
     ref_lat: float,
     ref_lon: float,
     terrain: Optional[np.ndarray] = None,
-) -> Image.Image:
+) -> tuple:
     """Rasterize OSM features onto a texture image for heightmap land areas.
 
     Renders features back-to-front:
@@ -181,7 +181,7 @@ def rasterize_osm_texture(
         terrain: Optional terrain elevation array for water masking.
 
     Returns:
-        PIL Image (RGB) of the rasterized texture.
+        Tuple of (PIL Image (RGB) of the rasterized texture, tex_size in meters).
     """
     size_x = terrain_info["size_x"]
     size_y = terrain_info["size_y"]

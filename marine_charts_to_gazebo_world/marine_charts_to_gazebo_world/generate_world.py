@@ -411,15 +411,17 @@ def main(argv=None):
                     "size_x": tile_size_x, "size_y": tile_size_y,
                 }
                 print("  Rasterizing OSM terrain texture...")
+                tile_center_lat = (tile_bbox.south + tile_bbox.north) / 2
+                tile_center_lon = (tile_bbox.west + tile_bbox.east) / 2
                 land_texture, osm_tex_size = rasterize_osm_texture(
                     osm_features, tile_terrain_info, grid_size,
-                    ref_lat, ref_lon,
+                    tile_center_lat, tile_center_lon,
                 )
 
             terrain, terrain_info, heightmap_info = _build_single_tile(
                 args, tile_bbox, grid_size, s57_features,
                 ref_lat=ref_lat, ref_lon=ref_lon,
-                model_name=f"terrain_{name}",
+                model_name=f"{args.world_name}_terrain_{name}",
                 land_texture=land_texture,
             )
             if osm_tex_size is not None:
@@ -474,6 +476,11 @@ def main(argv=None):
         )
         if osm_tex_size is not None:
             heightmap_info["osm_tex_size"] = osm_tex_size
+            # Rewrite model.sdf with updated tex_size
+            from .heightmap import _write_model_sdf
+            model_dir = os.path.join(args.output_dir,
+                                     heightmap_info["model_name"])
+            _write_model_sdf(model_dir, heightmap_info)
         heightmap_result = heightmap_info
 
     # Step 5: Generate feature models (optional)

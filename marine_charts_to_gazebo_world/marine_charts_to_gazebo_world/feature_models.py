@@ -1719,10 +1719,19 @@ def generate_feature_models(
             if mm.floating is not True:
                 continue
             mm_geom = mm.geometry
-            # Check distance from gangway endpoints to floating feature
-            for pt_idx in range(mm_geom.GetPointCount()):
-                fx, fy = _latlon_to_enu(mm_geom.GetY(pt_idx),
-                                        mm_geom.GetX(pt_idx),
+            # Check distance from gangway endpoints to floating feature.
+            # Polygon geometries return 0 for GetPointCount() — iterate
+            # the exterior ring instead.
+            geom_type = mm_geom.GetGeometryType() & 0xFF
+            if geom_type == 3:  # Polygon
+                point_source = mm_geom.GetGeometryRef(0)
+                if point_source is None:
+                    continue
+            else:
+                point_source = mm_geom
+            for pt_idx in range(point_source.GetPointCount()):
+                fx, fy = _latlon_to_enu(point_source.GetY(pt_idx),
+                                        point_source.GetX(pt_idx),
                                         center_lat, center_lon)
                 ds = math.sqrt((start_enu[0] - fx) ** 2
                                + (start_enu[1] - fy) ** 2)
