@@ -9,5 +9,3 @@ world_name: portsmouth_nh_unh_pier
 grid_power: 10   # 1025x1025 (~0.35 m/cell for this small area)
 
 osm: true
-# No skip_categories — show all features
-# No no_osm_buildings — include OSM-only buildings too
