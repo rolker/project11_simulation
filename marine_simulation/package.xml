@@ -19,6 +19,8 @@
   <exec_depend>marine_autonomy</exec_depend>
   <exec_depend>mbes_sim</exec_depend>
   <exec_depend>rviz2</exec_depend>
+  <exec_depend>ben_gazebo</exec_depend>
+  <exec_depend>portsmouth_nh_gazebo</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
 
