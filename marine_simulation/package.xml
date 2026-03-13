@@ -21,6 +21,9 @@
   <exec_depend>rviz2</exec_depend>
   <exec_depend>ben_gazebo</exec_depend>
   <exec_depend>portsmouth_nh_gazebo</exec_depend>
+  <exec_depend>ben_project11</exec_depend>
+  <exec_depend>camp</exec_depend>
+  <exec_depend>lifecycle_msgs</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
 
