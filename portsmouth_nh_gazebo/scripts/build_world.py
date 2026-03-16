@@ -142,6 +142,16 @@ def main():
     if config.get('osm_matching'):
         gen_args.append('--osm-matching')
 
+    # Wave/buoyancy support (optional)
+    # Accept waves: true (defaults) or waves: {gain: ..., period: ...}
+    waves = config.get('waves')
+    if waves is not None and waves is not False:
+        gen_args.append('--waves')
+        if isinstance(waves, dict):
+            for key in ('gain', 'period', 'direction', 'steepness', 'topic'):
+                if key in waves:
+                    gen_args.extend([f'--wave-{key}', str(waves[key])])
+
     # ETOPO bathymetry (optional)
     if config.get('fetch_etopo'):
         gen_args.append('--fetch-etopo')

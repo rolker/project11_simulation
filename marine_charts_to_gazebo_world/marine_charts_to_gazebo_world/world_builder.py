@@ -16,6 +16,7 @@
 
 import math
 import os
+import re
 
 
 _TEMPLATE_PATH = os.path.join(
@@ -121,6 +122,90 @@ def _build_terrain_includes(heightmap_info):
     return '\n'.join(includes)
 
 
+def _build_static_water_plane(size_x, size_y):
+    """Build SDF for a static semi-transparent water plane."""
+    return (
+        '    <!-- Water surface slightly above z=0 to reduce z-fighting '
+        'at shoreline -->\n'
+        '    <model name="water_plane">\n'
+        '      <static>true</static>\n'
+        '      <link name="link">\n'
+        '        <visual name="water_visual">\n'
+        '          <pose>0 0 0.05 0 0 0</pose>\n'
+        '          <geometry>\n'
+        '            <plane>\n'
+        '              <normal>0 0 1</normal>\n'
+        f'              <size>{size_x:.0f} {size_y:.0f}</size>\n'
+        '            </plane>\n'
+        '          </geometry>\n'
+        '          <material>\n'
+        '            <ambient>0.0 0.05 0.3 0.8</ambient>\n'
+        '            <diffuse>0.0 0.1 0.5 0.8</diffuse>\n'
+        '            <specular>0.1 0.1 0.1 0.5</specular>\n'
+        '          </material>\n'
+        '        </visual>\n'
+        '      </link>\n'
+        '    </model>'
+    )
+
+
+# Default wavefield parameters matching VRX conventions.
+_WAVE_DEFAULTS = {
+    "gain": 0.3,
+    "period": 5.0,
+    "direction": 0.0,
+    "steepness": 0.0,
+    "topic": "/vrx/wavefield/parameters",
+}
+
+
+def _build_wave_sdf(wave_config):
+    """Build SDF for VRX wave visuals and wavefield parameter publisher.
+
+    Args:
+        wave_config: dict with optional keys 'gain', 'period', 'direction',
+            'steepness', 'topic'. Missing keys use defaults.
+
+    Returns:
+        String of SDF XML (coast_waves include + PublisherPlugin).
+    """
+    cfg = {**_WAVE_DEFAULTS, **(wave_config or {})}
+    topic = cfg["topic"]
+    if not re.fullmatch(r'[~/a-zA-Z0-9_][/a-zA-Z0-9_]*', topic):
+        raise ValueError(f"Invalid ROS topic for wavefield publisher: {topic!r}")
+
+    lines = [
+        '    <!-- VRX wave visuals (Gerstner waves) -->',
+        '    <include>',
+        '      <uri>coast_waves</uri>',
+        '    </include>',
+        '',
+        '    <!-- Wavefield parameter publisher for buoyancy plugins -->',
+        '    <plugin filename="libPublisherPlugin.so"',
+        '            name="vrx::PublisherPlugin">',
+        f'      <message type="gz.msgs.Param" topic="{topic}"',
+        '               every="2.0">',
+    ]
+
+    for key in ("direction", "gain", "period", "steepness"):
+        lines.extend([
+            '        params {',
+            f'          key: "{key}"',
+            '          value {',
+            '            type: DOUBLE',
+            f'            double_value: {cfg[key]}',
+            '          }',
+            '        }',
+        ])
+
+    lines.extend([
+        '      </message>',
+        '    </plugin>',
+    ])
+
+    return '\n'.join(lines)
+
+
 def generate_world_sdf(
     world_name: str,
     center_lat: float,
@@ -132,6 +217,7 @@ def generate_world_sdf(
     osm_feature_models: str = "",
     water_size_x: float = 0.0,
     water_size_y: float = 0.0,
+    wave_config: dict = None,
 ) -> str:
     """Generate a complete Gazebo Harmonic world SDF file.
 
@@ -140,7 +226,8 @@ def generate_world_sdf(
     - DART physics (4ms step)
     - Standard Gazebo system plugins
     - Terrain heightmap model(s)
-    - Semi-transparent water surface plane
+    - Water surface: VRX wave visuals when wave_config is set,
+      otherwise a static semi-transparent plane
     - Scene with sky and lighting
     - Optional S57/OSM chart feature models (buildings, buoys, etc.)
 
@@ -158,6 +245,10 @@ def generate_world_sdf(
             heightmap_info size.
         water_size_y: Override water plane height (meters). If 0, uses
             heightmap_info size.
+        wave_config: optional dict with wave parameter overrides. When not
+            None, VRX coast_waves visuals and a wavefield PublisherPlugin
+            replace the static water plane. Keys: gain, period, direction,
+            steepness, topic.
 
     Returns:
         Path to the generated SDF file.
@@ -182,15 +273,19 @@ def generate_world_sdf(
 
     terrain_includes = _build_terrain_includes(heightmap_info)
 
+    if wave_config is not None:
+        water_surface = _build_wave_sdf(wave_config)
+    else:
+        water_surface = _build_static_water_plane(wx, wy)
+
     sdf_content = template.format(
         world_name=world_name,
         center_lat=center_lat,
         center_lon=center_lon,
-        water_size_x=wx,
-        water_size_y=wy,
         terrain_includes=terrain_includes,
         camera_pose=camera_pose,
         camera_far=camera_far,
+        water_surface=water_surface,
         s57_feature_models=s57_feature_models,
         osm_feature_models=osm_feature_models,
     )
