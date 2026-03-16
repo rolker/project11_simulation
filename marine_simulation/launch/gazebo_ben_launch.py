@@ -80,6 +80,8 @@ def generate_launch_description():
         launch_arguments={
             'namespace': namespace,
             'world_name': WORLD_NAME,
+            'x': '-69',
+            'y': '-556',
         }.items(),
     )
 
