@@ -31,6 +31,9 @@
 
 Parallel to simulator_launch.py but uses Gazebo instead of asv_sim for
 physics and gazebo_helm instead of asv_helm for thruster control.
+
+Includes gazebo_ben_launch.py for the Gazebo world and BEN model, then
+adds the autonomy stack, gazebo helm, and operator UI on top.
 """
 
 from launch import LaunchDescription
@@ -45,14 +48,10 @@ from launch.substitutions import TextSubstitution
 from launch_ros.actions import LifecycleNode
 from launch_ros.actions import LifecycleTransition
 from launch_ros.actions import PushROSNamespace
-from launch_ros.actions import SetParameter
 from launch_ros.actions import SetRemap
 from launch_ros.substitutions import FindPackageShare
 
 from lifecycle_msgs.msg import Transition
-
-
-WORLD_NAME = 'portsmouth_nh_harbor'
 
 
 def generate_launch_description():
@@ -69,32 +68,17 @@ def generate_launch_description():
     enable_bridge_arg = DeclareLaunchArgument(
         'enable_bridge', default_value=TextSubstitution(text='false'))
 
-    # Global use_sim_time for all nodes
-    set_use_sim_time = SetParameter(name='use_sim_time', value=True)
-
-    # 1. Start Gazebo with Portsmouth Harbor world
-    gz_harbor = IncludeLaunchDescription(
+    # 1–2. Gazebo world + BEN model
+    gazebo_ben = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution([
-                FindPackageShare('portsmouth_nh_gazebo'),
+                FindPackageShare('marine_simulation'),
                 'launch',
-                'harbor_launch.py'
-            ])
-        ),
-    )
-
-    # 2. Spawn BEN into the Portsmouth Harbor world
-    spawn_ben = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            PathJoinSubstitution([
-                FindPackageShare('ben_gazebo'),
-                'launch',
-                'spawn_ben_launch.py'
+                'gazebo_ben_launch.py'
             ])
         ),
         launch_arguments={
             'namespace': namespace,
-            'world_name': WORLD_NAME,
         }.items(),
     )
 
@@ -177,9 +161,7 @@ def generate_launch_description():
         namespace_arg,
         background_chart_arg,
         enable_bridge_arg,
-        set_use_sim_time,
-        gz_harbor,
-        spawn_ben,
+        gazebo_ben,
         ben_core,
         gazebo_helm_group,
         sim_operator,
