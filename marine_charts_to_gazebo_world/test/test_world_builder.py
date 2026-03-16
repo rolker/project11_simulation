@@ -256,6 +256,11 @@ class TestWaveSdf:
         assert "/custom/waves" in sdf
         assert "/vrx/wavefield/parameters" not in sdf
 
+    def test_build_wave_sdf_invalid_topic(self):
+        """Invalid topic should raise ValueError."""
+        with pytest.raises(ValueError, match="Invalid ROS topic"):
+            _build_wave_sdf({"topic": 'bad"topic<xml>'})
+
     def test_waves_valid_xml(self):
         """World with waves should still be valid XML."""
         with tempfile.TemporaryDirectory() as tmpdir:

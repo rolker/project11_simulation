@@ -148,7 +148,7 @@ def main():
     if waves:
         gen_args.append('--waves')
         if isinstance(waves, dict):
-            for key in ('gain', 'period', 'direction', 'steepness'):
+            for key in ('gain', 'period', 'direction', 'steepness', 'topic'):
                 if key in waves:
                     gen_args.extend([f'--wave-{key}', str(waves[key])])
 

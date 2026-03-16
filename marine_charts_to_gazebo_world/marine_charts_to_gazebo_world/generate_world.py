@@ -243,6 +243,12 @@ def parse_args(argv=None):
         default=None,
         help="Gerstner wave steepness (default: 0.0). Requires --waves.",
     )
+    parser.add_argument(
+        "--wave-topic",
+        default=None,
+        help="Wavefield parameter topic "
+        "(default: /vrx/wavefield/parameters). Requires --waves.",
+    )
     return parser.parse_args(argv)
 
 
@@ -576,6 +582,8 @@ def main(argv=None):
             wave_config["direction"] = args.wave_direction
         if args.wave_steepness is not None:
             wave_config["steepness"] = args.wave_steepness
+        if args.wave_topic is not None:
+            wave_config["topic"] = args.wave_topic
     print("Generating world SDF...")
     sdf_path = generate_world_sdf(
         world_name=args.world_name,

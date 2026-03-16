@@ -16,6 +16,7 @@
 
 import math
 import os
+import re
 
 
 _TEMPLATE_PATH = os.path.join(
@@ -121,6 +122,33 @@ def _build_terrain_includes(heightmap_info):
     return '\n'.join(includes)
 
 
+def _build_static_water_plane(size_x, size_y):
+    """Build SDF for a static semi-transparent water plane."""
+    return (
+        '    <!-- Water surface slightly above z=0 to reduce z-fighting '
+        'at shoreline -->\n'
+        '    <model name="water_plane">\n'
+        '      <static>true</static>\n'
+        '      <link name="link">\n'
+        '        <visual name="water_visual">\n'
+        '          <pose>0 0 0.05 0 0 0</pose>\n'
+        '          <geometry>\n'
+        '            <plane>\n'
+        '              <normal>0 0 1</normal>\n'
+        f'              <size>{size_x:.0f} {size_y:.0f}</size>\n'
+        '            </plane>\n'
+        '          </geometry>\n'
+        '          <material>\n'
+        '            <ambient>0.0 0.05 0.3 0.8</ambient>\n'
+        '            <diffuse>0.0 0.1 0.5 0.8</diffuse>\n'
+        '            <specular>0.1 0.1 0.1 0.5</specular>\n'
+        '          </material>\n'
+        '        </visual>\n'
+        '      </link>\n'
+        '    </model>'
+    )
+
+
 # Default wavefield parameters matching VRX conventions.
 _WAVE_DEFAULTS = {
     "gain": 0.3,
@@ -143,6 +171,8 @@ def _build_wave_sdf(wave_config):
     """
     cfg = {**_WAVE_DEFAULTS, **(wave_config or {})}
     topic = cfg["topic"]
+    if not re.fullmatch(r'[~/a-zA-Z0-9_][/a-zA-Z0-9_]*', topic):
+        raise ValueError(f"Invalid ROS topic for wavefield publisher: {topic!r}")
 
     lines = [
         '    <!-- VRX wave visuals (Gerstner waves) -->',
@@ -196,10 +226,10 @@ def generate_world_sdf(
     - DART physics (4ms step)
     - Standard Gazebo system plugins
     - Terrain heightmap model(s)
-    - Semi-transparent water surface plane
+    - Water surface: VRX wave visuals when wave_config is set,
+      otherwise a static semi-transparent plane
     - Scene with sky and lighting
     - Optional S57/OSM chart feature models (buildings, buoys, etc.)
-    - Optional VRX wave visuals and wavefield parameter publisher
 
     Args:
         world_name: Name for the world (used in filename and SDF).
@@ -217,7 +247,8 @@ def generate_world_sdf(
             heightmap_info size.
         wave_config: optional dict with wave parameter overrides. When not
             None, VRX coast_waves visuals and a wavefield PublisherPlugin
-            are added. Keys: gain, period, direction, steepness, topic.
+            replace the static water plane. Keys: gain, period, direction,
+            steepness, topic.
 
     Returns:
         Path to the generated SDF file.
@@ -241,20 +272,22 @@ def generate_world_sdf(
         template = f.read()
 
     terrain_includes = _build_terrain_includes(heightmap_info)
-    wave_models = _build_wave_sdf(wave_config) if wave_config is not None else ""
+
+    if wave_config is not None:
+        water_surface = _build_wave_sdf(wave_config)
+    else:
+        water_surface = _build_static_water_plane(wx, wy)
 
     sdf_content = template.format(
         world_name=world_name,
         center_lat=center_lat,
         center_lon=center_lon,
-        water_size_x=wx,
-        water_size_y=wy,
         terrain_includes=terrain_includes,
         camera_pose=camera_pose,
         camera_far=camera_far,
+        water_surface=water_surface,
         s57_feature_models=s57_feature_models,
         osm_feature_models=osm_feature_models,
-        wave_models=wave_models,
     )
 
     sdf_path = os.path.join(output_dir, f"{world_name}.sdf")
