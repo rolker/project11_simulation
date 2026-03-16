@@ -37,7 +37,11 @@ def _launch_gazebo(context, *args, **kwargs):
             'Rebuild: colcon build --packages-select portsmouth_nh_gazebo'
         )
 
-    gz_args = f'{"-v4" if verbose else "-v1"} -r {sdf_path}'
+    gz_args = (
+        f'{"-v4" if verbose else "-v1"} -r '
+        f'--physics-engine gz-physics-bullet-featherstone-plugin '
+        f'{sdf_path}'
+    )
 
     return [
         IncludeLaunchDescription(
