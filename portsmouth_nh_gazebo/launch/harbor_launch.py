@@ -18,12 +18,8 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import (
-    DeclareLaunchArgument,
-    ExecuteProcess,
-    OpaqueFunction,
-    Shutdown,
-)
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 
 WORLD_NAME = 'portsmouth_nh_harbor'
@@ -40,11 +36,22 @@ def _launch_gazebo(context, *args, **kwargs):
             f'World SDF not found at {sdf_path}. '
             'Rebuild: colcon build --packages-select portsmouth_nh_gazebo'
         )
+
+    gz_args = f'{"-v4" if verbose else "-v1"} -r {sdf_path}'
+
     return [
-        ExecuteProcess(
-            cmd=['gz', 'sim', '-v4' if verbose else '-v1', sdf_path],
-            output='screen',
-            on_exit=Shutdown(),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                os.path.join(
+                    get_package_share_directory('ros_gz_sim'),
+                    'launch',
+                    'gz_sim.launch.py'
+                )
+            ),
+            launch_arguments={
+                'gz_args': gz_args,
+                'on_exit_shutdown': 'true',
+            }.items(),
         ),
     ]
 
