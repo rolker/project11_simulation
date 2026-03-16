@@ -213,6 +213,36 @@ def parse_args(argv=None):
         "is adjusted automatically to stay under this cap. "
         "Set to 0 to disable trees. Default: 500.",
     )
+    parser.add_argument(
+        "--waves",
+        action="store_true",
+        help="Add VRX wave visuals (coast_waves) and a wavefield parameter "
+        "publisher to the world. Required for buoyancy simulation.",
+    )
+    parser.add_argument(
+        "--wave-gain",
+        type=float,
+        default=None,
+        help="Wave amplitude gain (default: 0.3). Requires --waves.",
+    )
+    parser.add_argument(
+        "--wave-period",
+        type=float,
+        default=None,
+        help="Wave period in seconds (default: 5.0). Requires --waves.",
+    )
+    parser.add_argument(
+        "--wave-direction",
+        type=float,
+        default=None,
+        help="Wave direction in degrees (default: 0.0). Requires --waves.",
+    )
+    parser.add_argument(
+        "--wave-steepness",
+        type=float,
+        default=None,
+        help="Gerstner wave steepness (default: 0.0). Requires --waves.",
+    )
     return parser.parse_args(argv)
 
 
@@ -535,6 +565,17 @@ def main(argv=None):
         camera_config["direction"] = args.camera_direction
 
     water_x, water_y = _bbox_size_meters(bbox)
+    wave_config = None
+    if args.waves:
+        wave_config = {}
+        if args.wave_gain is not None:
+            wave_config["gain"] = args.wave_gain
+        if args.wave_period is not None:
+            wave_config["period"] = args.wave_period
+        if args.wave_direction is not None:
+            wave_config["direction"] = args.wave_direction
+        if args.wave_steepness is not None:
+            wave_config["steepness"] = args.wave_steepness
     print("Generating world SDF...")
     sdf_path = generate_world_sdf(
         world_name=args.world_name,
@@ -547,6 +588,7 @@ def main(argv=None):
         osm_feature_models=osm_feature_sdf,
         water_size_x=water_x,
         water_size_y=water_y,
+        wave_config=wave_config,
     )
     print(f"  World SDF saved to {sdf_path}")
 

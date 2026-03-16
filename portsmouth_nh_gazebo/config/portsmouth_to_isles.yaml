@@ -30,3 +30,5 @@ tiles:
     grid_power: 10   # 1025x1025
 
 osm: true
+
+waves: true

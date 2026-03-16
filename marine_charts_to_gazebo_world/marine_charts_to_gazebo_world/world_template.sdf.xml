@@ -237,6 +237,8 @@
       </link>
     </model>
 
+{wave_models}
+
 {s57_feature_models}
 
 {osm_feature_models}

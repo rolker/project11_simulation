@@ -121,6 +121,61 @@ def _build_terrain_includes(heightmap_info):
     return '\n'.join(includes)
 
 
+# Default wavefield parameters matching VRX conventions.
+_WAVE_DEFAULTS = {
+    "gain": 0.3,
+    "period": 5.0,
+    "direction": 0.0,
+    "steepness": 0.0,
+    "topic": "/vrx/wavefield/parameters",
+}
+
+
+def _build_wave_sdf(wave_config):
+    """Build SDF for VRX wave visuals and wavefield parameter publisher.
+
+    Args:
+        wave_config: dict with optional keys 'gain', 'period', 'direction',
+            'steepness', 'topic'. Missing keys use defaults.
+
+    Returns:
+        String of SDF XML (coast_waves include + PublisherPlugin).
+    """
+    cfg = {**_WAVE_DEFAULTS, **(wave_config or {})}
+    topic = cfg["topic"]
+
+    lines = [
+        '    <!-- VRX wave visuals (Gerstner waves) -->',
+        '    <include>',
+        '      <uri>coast_waves</uri>',
+        '    </include>',
+        '',
+        '    <!-- Wavefield parameter publisher for buoyancy plugins -->',
+        '    <plugin filename="libPublisherPlugin.so"',
+        '            name="vrx::PublisherPlugin">',
+        f'      <message type="gz.msgs.Param" topic="{topic}"',
+        '               every="2.0">',
+    ]
+
+    for key in ("direction", "gain", "period", "steepness"):
+        lines.extend([
+            '        params {',
+            f'          key: "{key}"',
+            '          value {',
+            '            type: DOUBLE',
+            f'            double_value: {cfg[key]}',
+            '          }',
+            '        }',
+        ])
+
+    lines.extend([
+        '      </message>',
+        '    </plugin>',
+    ])
+
+    return '\n'.join(lines)
+
+
 def generate_world_sdf(
     world_name: str,
     center_lat: float,
@@ -132,6 +187,7 @@ def generate_world_sdf(
     osm_feature_models: str = "",
     water_size_x: float = 0.0,
     water_size_y: float = 0.0,
+    wave_config: dict = None,
 ) -> str:
     """Generate a complete Gazebo Harmonic world SDF file.
 
@@ -143,6 +199,7 @@ def generate_world_sdf(
     - Semi-transparent water surface plane
     - Scene with sky and lighting
     - Optional S57/OSM chart feature models (buildings, buoys, etc.)
+    - Optional VRX wave visuals and wavefield parameter publisher
 
     Args:
         world_name: Name for the world (used in filename and SDF).
@@ -158,6 +215,9 @@ def generate_world_sdf(
             heightmap_info size.
         water_size_y: Override water plane height (meters). If 0, uses
             heightmap_info size.
+        wave_config: optional dict with wave parameter overrides. When not
+            None, VRX coast_waves visuals and a wavefield PublisherPlugin
+            are added. Keys: gain, period, direction, steepness, topic.
 
     Returns:
         Path to the generated SDF file.
@@ -181,6 +241,7 @@ def generate_world_sdf(
         template = f.read()
 
     terrain_includes = _build_terrain_includes(heightmap_info)
+    wave_models = _build_wave_sdf(wave_config) if wave_config is not None else ""
 
     sdf_content = template.format(
         world_name=world_name,
@@ -193,6 +254,7 @@ def generate_world_sdf(
         camera_far=camera_far,
         s57_feature_models=s57_feature_models,
         osm_feature_models=osm_feature_models,
+        wave_models=wave_models,
     )
 
     sdf_path = os.path.join(output_dir, f"{world_name}.sdf")

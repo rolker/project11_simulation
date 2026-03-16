@@ -20,7 +20,10 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from marine_charts_to_gazebo_world.world_builder import generate_world_sdf
+from marine_charts_to_gazebo_world.world_builder import (
+    _build_wave_sdf,
+    generate_world_sdf,
+)
 
 
 class TestGenerateWorldSdf:
@@ -174,3 +177,95 @@ class TestGenerateWorldSdf:
             tree = ET.parse(sdf_path)
             root = tree.getroot()
             assert root.tag == "sdf"
+
+
+class TestWaveSdf:
+    """Tests for wave/buoyancy SDF generation."""
+
+    _HEIGHTMAP = {
+        "model_name": "test_terrain",
+        "size_x": 1000.0,
+        "size_y": 1000.0,
+        "size_z": 50.0,
+        "pos_z": -30.0,
+        "min_elevation": -30.0,
+        "max_elevation": 20.0,
+    }
+
+    def test_no_waves_by_default(self):
+        """Without wave_config, no wave content should appear."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sdf_path = generate_world_sdf(
+                world_name="no_waves",
+                center_lat=43.075,
+                center_lon=-70.71,
+                output_dir=tmpdir,
+                heightmap_info=self._HEIGHTMAP,
+            )
+            with open(sdf_path) as f:
+                content = f.read()
+            assert "coast_waves" not in content
+            assert "PublisherPlugin" not in content
+
+    def test_waves_with_defaults(self):
+        """wave_config={} should produce coast_waves and PublisherPlugin."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sdf_path = generate_world_sdf(
+                world_name="with_waves",
+                center_lat=43.075,
+                center_lon=-70.71,
+                output_dir=tmpdir,
+                heightmap_info=self._HEIGHTMAP,
+                wave_config={},
+            )
+            with open(sdf_path) as f:
+                content = f.read()
+            assert "coast_waves" in content
+            assert "vrx::PublisherPlugin" in content
+            assert "/vrx/wavefield/parameters" in content
+            # Default values
+            assert 'double_value: 0.3' in content  # gain
+            assert 'double_value: 5.0' in content  # period
+
+    def test_waves_custom_parameters(self):
+        """Custom wave parameters should appear in generated SDF."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sdf_path = generate_world_sdf(
+                world_name="custom_waves",
+                center_lat=43.075,
+                center_lon=-70.71,
+                output_dir=tmpdir,
+                heightmap_info=self._HEIGHTMAP,
+                wave_config={"gain": 0.5, "period": 8.0, "direction": 240.0},
+            )
+            with open(sdf_path) as f:
+                content = f.read()
+            assert 'double_value: 0.5' in content
+            assert 'double_value: 8.0' in content
+            assert 'double_value: 240.0' in content
+
+    def test_build_wave_sdf_contains_all_params(self):
+        """_build_wave_sdf should include all four wavefield parameters."""
+        sdf = _build_wave_sdf({})
+        for key in ("direction", "gain", "period", "steepness"):
+            assert f'key: "{key}"' in sdf
+
+    def test_build_wave_sdf_custom_topic(self):
+        """Custom topic should be used in the PublisherPlugin."""
+        sdf = _build_wave_sdf({"topic": "/custom/waves"})
+        assert "/custom/waves" in sdf
+        assert "/vrx/wavefield/parameters" not in sdf
+
+    def test_waves_valid_xml(self):
+        """World with waves should still be valid XML."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sdf_path = generate_world_sdf(
+                world_name="waves_xml",
+                center_lat=43.075,
+                center_lon=-70.71,
+                output_dir=tmpdir,
+                heightmap_info=self._HEIGHTMAP,
+                wave_config={"gain": 0.7},
+            )
+            tree = ET.parse(sdf_path)
+            assert tree.getroot().tag == "sdf"
