@@ -571,6 +571,11 @@ def main(argv=None):
         camera_config["direction"] = args.camera_direction
 
     water_x, water_y = _bbox_size_meters(bbox)
+    wave_opts = [args.wave_gain, args.wave_period, args.wave_direction,
+                 args.wave_steepness, args.wave_topic]
+    if not args.waves and any(v is not None for v in wave_opts):
+        print("Error: --wave-* options require --waves", file=sys.stderr)
+        return 1
     wave_config = None
     if args.waves:
         wave_config = {}

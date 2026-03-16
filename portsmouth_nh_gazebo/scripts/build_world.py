@@ -145,7 +145,7 @@ def main():
     # Wave/buoyancy support (optional)
     # Accept waves: true (defaults) or waves: {gain: ..., period: ...}
     waves = config.get('waves')
-    if waves:
+    if waves is not None and waves is not False:
         gen_args.append('--waves')
         if isinstance(waves, dict):
             for key in ('gain', 'period', 'direction', 'steepness', 'topic'):
