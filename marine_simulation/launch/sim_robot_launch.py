@@ -54,6 +54,7 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
     drix = LaunchConfiguration('drix')
     no_sim = LaunchConfiguration('no_sim')
+    params_file = LaunchConfiguration('params_file')
 
     namespace_arg = DeclareLaunchArgument(
         'namespace', default_value=TextSubstitution(text='ben')
@@ -72,6 +73,15 @@ def generate_launch_description():
     )
     no_sim_arg = DeclareLaunchArgument(
         'no_sim', default_value=TextSubstitution(text='false')
+    )
+    params_file_arg = DeclareLaunchArgument(
+        'params_file',
+        default_value=PathJoinSubstitution([
+            FindPackageShare('ben_project11'),
+            'config',
+            'nav2_params.yaml',
+        ]),
+        description='Full path to the ROS2 parameters file for nav2 nodes',
     )
 
     set_use_sim_time = SetParameter(
@@ -92,6 +102,7 @@ def generate_launch_description():
             'namespace': namespace,
             'enable_bridge': enable_bridge,
             'is_simulator': 'true',
+            'params_file': params_file,
         }.items()
     )
 
@@ -358,6 +369,7 @@ def generate_launch_description():
         use_sim_time_arg,
         drix_arg,
         no_sim_arg,
+        params_file_arg,
         set_use_sim_time,
         launch_ben_core_include,
         # launch_drix_core_include,
