@@ -158,6 +158,7 @@ class Platform:
         nsf.status.status = NavSatStatus.STATUS_FIX
         nsf.latitude = math.degrees(self.dynamics.latitude)
         nsf.longitude = math.degrees(self.dynamics.longitude)
+        nsf.altitude = self.dynamics.altitude
         self.position_publisher.publish(nsf)
 
         imu = Imu()

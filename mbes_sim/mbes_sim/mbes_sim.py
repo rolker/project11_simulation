@@ -14,6 +14,7 @@ from rclpy.timer import Timer
 from marine_acoustic_msgs.msg import DetectionFlag
 from marine_acoustic_msgs.msg import SonarDetections
 from std_msgs.msg import Float32
+from std_msgs.msg import Float64
 from std_msgs.msg import Header
 from sensor_msgs_py import point_cloud2
 from sensor_msgs.msg import PointCloud2
@@ -37,6 +38,7 @@ class SonarSim(Node):
         self.sound_speed = 1500.0  # m/s, typical speed of sound in water
         self.frequency = 200000.0  # Hz, typical frequency for multibeam sonar
         self.grid_file = ""
+        self.tide_level = 0.0  # meters above MLLW, updated by subscription
 
     def on_configure(self, state: State):
         default_grid_file = pathlib.Path(get_package_share_directory('mbes_sim'))/'data'/'US5NH02M.tiff'
@@ -45,11 +47,18 @@ class SonarSim(Node):
         self.declare_parameter('beam_count', 120)
         self.declare_parameter('ping_interval', 1.0)
         self.declare_parameter('sonar_frame_id', 'mbes')
+        self.declare_parameter('tide_level_topic', 'tide_level')
         self.depth_publisher = self.create_lifecycle_publisher(Float32, 'depth', 5) # type: ignore
         self.detections_publisher = self.create_lifecycle_publisher(SonarDetections, 'detections', 5) # type: ignore
         self.ping_publisher = self.create_lifecycle_publisher(PointCloud2, 'soundings', 10) # type: ignore
+        tide_topic = self.get_parameter('tide_level_topic').get_parameter_value().string_value
+        self.tide_subscription = self.create_subscription(
+            Float64, tide_topic, self.tide_callback, 5)
         return super().on_configure(state)
 
+
+    def tide_callback(self, msg: Float64):
+        self.tide_level = msg.data
 
     def on_activate(self, state):
         grid_file = self.get_parameter('grid_file').get_parameter_value().string_value
@@ -82,6 +91,9 @@ class SonarSim(Node):
         if self.ping_publisher is not None:
             self.destroy_publisher(self.ping_publisher)
         self.ping_publisher = None
+        if hasattr(self, 'tide_subscription') and self.tide_subscription is not None:
+            self.destroy_subscription(self.tide_subscription)
+            self.tide_subscription = None
         return super().on_cleanup(state)
     
     def on_shutdown(self, state):
@@ -134,9 +146,11 @@ class SonarSim(Node):
         lon_deg = math.degrees(lon_rad)
         lat_deg = math.degrees(lat_rad)
 
-        depth = self.bathy.getDepthAtLatLon(lat_deg, lon_deg)
-        self.get_logger().debug(f'depth: {depth}')
-        if depth is not None and depth >= 0:
+        chart_depth = self.bathy.getDepthAtLatLon(lat_deg, lon_deg)
+        self.get_logger().debug(f'chart_depth: {chart_depth}')
+        if chart_depth is not None and chart_depth >= 0:
+            # Actual water depth = chart depth (MLLW) + tide above MLLW
+            depth = chart_depth + self.tide_level
             try:
                 depth_msg = Float32()
                 depth_msg.data = float(depth)
@@ -167,8 +181,8 @@ class SonarSim(Node):
                     x = port_outer_beam_location_xy[0] + dx*i
                     y = port_outer_beam_location_xy[1] + dy*i
                     z = self.bathy.getDepth(x,y)
-                    #print 'depth:', z
                     if z is not None:
+                        z = z + self.tide_level
                         soundings.append((0.0, -swath_half_width+i*sounding_spacing, z))
                         y2 = soundings[-1][1]*soundings[-1][1]
                         z2 = z*z

@@ -13,6 +13,7 @@ from rcl_interfaces.msg import ParameterDescriptor
 import rclpy
 import rclpy.node
 from std_msgs.msg import Bool
+from std_msgs.msg import Float64
 
 
 class AsvSim(rclpy.node.Node):
@@ -36,6 +37,9 @@ class AsvSim(rclpy.node.Node):
         self.reset_subscriber = self.create_subscription(
             Bool, '~/sim_reset', self.reset_callback, 1)
 
+        self.tide_publisher = self.create_publisher(
+            Float64, '~/environment/tide_level', 5)
+
         self.update_timer = self.create_timer(0.05, self.update)
         self.nav_time = self.create_timer(0.2, self.updateNav)
 
@@ -53,6 +57,10 @@ class AsvSim(rclpy.node.Node):
             p.update()
 
     def updateNav(self):
+        now = self.get_clock().now()
+        tide = self.environment.getTide(now)
+        self.tide_publisher.publish(Float64(data=tide))
+
         for p in self.platforms:
             p.updateNav()
 
