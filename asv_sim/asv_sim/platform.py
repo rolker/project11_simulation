@@ -165,7 +165,8 @@ class Platform:
         imu.header.stamp = self.dynamics.last_update.to_msg()
         imu.header.frame_id = self.mru_frame
         yaw = math.radians(90.0) - self.dynamics.heading
-        q = transforms3d.taitbryan.euler2quat(yaw, 0, 0)
+        q = transforms3d.taitbryan.euler2quat(
+            yaw, self.dynamics.pitch, self.dynamics.roll)
         imu.orientation.x = q[1]
         imu.orientation.y = q[2]
         imu.orientation.z = q[3]

@@ -28,6 +28,20 @@ _DEFAULT_ELLIPSOID_TO_MLLW = -28.104  # meters
 # getTide() return height above MLLW rather than above MSL.
 _DEFAULT_MSL_ABOVE_MLLW = 1.43  # meters (NOAA Station 8423898)
 
+# Default wave components — mild sea state
+# Each axis gets parallel arrays of amplitude, period (seconds), phase (radians)
+_DEFAULT_HEAVE_AMPLITUDES = [0.15, 0.10, 0.05]  # meters
+_DEFAULT_HEAVE_PERIODS = [4.0, 5.5, 7.0]        # seconds
+_DEFAULT_HEAVE_PHASES = [0.0, 1.2, 2.5]         # radians
+
+_DEFAULT_ROLL_AMPLITUDES = [2.0, 1.5, 0.8]      # degrees
+_DEFAULT_ROLL_PERIODS = [4.5, 6.0, 8.0]         # seconds
+_DEFAULT_ROLL_PHASES = [0.5, 1.8, 3.1]          # radians
+
+_DEFAULT_PITCH_AMPLITUDES = [1.0, 0.7, 0.4]     # degrees
+_DEFAULT_PITCH_PERIODS = [3.5, 5.0, 7.5]        # seconds
+_DEFAULT_PITCH_PHASES = [0.3, 2.0, 0.9]         # radians
+
 
 class Environment(object):
 
@@ -89,6 +103,29 @@ class Environment(object):
                 description='Multiplier for constituent speeds — set >1 '
                 'to accelerate tide for testing'))
 
+        # Wave parameters — each axis has parallel arrays of components
+        for axis, amp_def, per_def, pha_def in [
+            ('heave', _DEFAULT_HEAVE_AMPLITUDES,
+             _DEFAULT_HEAVE_PERIODS, _DEFAULT_HEAVE_PHASES),
+            ('roll', _DEFAULT_ROLL_AMPLITUDES,
+             _DEFAULT_ROLL_PERIODS, _DEFAULT_ROLL_PHASES),
+            ('pitch', _DEFAULT_PITCH_AMPLITUDES,
+             _DEFAULT_PITCH_PERIODS, _DEFAULT_PITCH_PHASES),
+        ]:
+            node.declare_parameter(
+                f'environment.waves.{axis}.amplitudes', amp_def,
+                ParameterDescriptor(
+                    description=f'Wave {axis} amplitudes '
+                    f'({"meters" if axis == "heave" else "degrees"})'))
+            node.declare_parameter(
+                f'environment.waves.{axis}.periods', per_def,
+                ParameterDescriptor(
+                    description=f'Wave {axis} periods in seconds'))
+            node.declare_parameter(
+                f'environment.waves.{axis}.phases', pha_def,
+                ParameterDescriptor(
+                    description=f'Wave {axis} phases in radians'))
+
     def updateParameters(self, parameters: List[Parameter]):
         for param in parameters:
             if param.name == 'environment.current.speed':
@@ -113,6 +150,16 @@ class Environment(object):
                 self.msl_above_mllw = param.value
             if param.name == 'environment.tide.speed_factor':
                 self.tide_speed_factor = param.value
+
+            # Wave parameters
+            for axis in ('heave', 'roll', 'pitch'):
+                prefix = f'environment.waves.{axis}'
+                if param.name == f'{prefix}.amplitudes':
+                    setattr(self, f'wave_{axis}_amplitudes', param.value)
+                if param.name == f'{prefix}.periods':
+                    setattr(self, f'wave_{axis}_periods', param.value)
+                if param.name == f'{prefix}.phases':
+                    setattr(self, f'wave_{axis}_phases', param.value)
 
     def getCurrent(self, lat, long, apply_noise: bool):
         # plan to allow current to differ with location, uniform for now.
@@ -149,6 +196,44 @@ class Environment(object):
             tide += self.tide_amplitudes[i] * math.cos(
                 speed_rad_per_hour * hours - phase_rad)
         return tide
+
+    def _wave_sum(self, amplitudes, periods, phases, t_sec: float) -> float:
+        """Sum sinusoidal wave components at time t_sec."""
+        value = 0.0
+        n = min(len(amplitudes), len(periods), len(phases))
+        for i in range(n):
+            if periods[i] > 0:
+                value += amplitudes[i] * math.sin(
+                    2.0 * math.pi * t_sec / periods[i] + phases[i])
+        return value
+
+    def getWaves(self, timestamp: rclpy.time.Time) -> dict:
+        """Compute wave-driven heave, roll, and pitch.
+
+        :param timestamp: ROS time
+        :returns: dict with 'heave' (meters), 'roll' (radians),
+            'pitch' (radians)
+        """
+        t_sec = timestamp.nanoseconds / 1e9
+
+        heave = self._wave_sum(
+            self.wave_heave_amplitudes,
+            self.wave_heave_periods,
+            self.wave_heave_phases, t_sec)
+        roll_deg = self._wave_sum(
+            self.wave_roll_amplitudes,
+            self.wave_roll_periods,
+            self.wave_roll_phases, t_sec)
+        pitch_deg = self._wave_sum(
+            self.wave_pitch_amplitudes,
+            self.wave_pitch_periods,
+            self.wave_pitch_phases, t_sec)
+
+        return {
+            'heave': heave,
+            'roll': math.radians(roll_deg),
+            'pitch': math.radians(pitch_deg),
+        }
 
     def getEllipsoidalAltitude(self, timestamp: rclpy.time.Time) -> float:
         """Compute WGS84 ellipsoidal altitude for a surface vessel.

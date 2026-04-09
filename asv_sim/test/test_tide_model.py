@@ -1,4 +1,4 @@
-"""Tests for the tidal model in asv_sim.environment."""
+"""Tests for tide and wave models in asv_sim.environment."""
 
 import math
 
@@ -102,3 +102,48 @@ class TestTideModel:
 
         # These should differ (different effective speeds)
         assert abs(normal - accelerated) > 0.01
+
+
+def _make_time_sec(seconds: float) -> rclpy.time.Time:
+    """Create a ROS Time from seconds since epoch."""
+    return rclpy.time.Time(nanoseconds=int(seconds * 1e9))
+
+
+class TestWaveModel:
+    """Test wave-driven heave, roll, and pitch."""
+
+    def test_waves_returns_dict(self, env):
+        """Verify getWaves returns dict with expected keys."""
+        t = _make_time_sec(0.0)
+        result = env.getWaves(t)
+        assert 'heave' in result
+        assert 'roll' in result
+        assert 'pitch' in result
+
+    def test_heave_amplitude_range(self, env):
+        """Heave should stay within sum-of-amplitudes bounds."""
+        max_heave = 0.15 + 0.10 + 0.05  # sum of default amplitudes
+        values = []
+        for ms in range(0, 10000, 50):  # 10 seconds, 50ms steps
+            t = _make_time_sec(ms / 1000.0)
+            values.append(env.getWaves(t)['heave'])
+        assert max(values) <= max_heave + 0.001
+        assert min(values) >= -max_heave - 0.001
+
+    def test_waves_vary_over_time(self, env):
+        """Waves should change over short timescales."""
+        v1 = env.getWaves(_make_time_sec(0.0))
+        v2 = env.getWaves(_make_time_sec(1.0))
+        v3 = env.getWaves(_make_time_sec(2.0))
+        # Heave should differ across these 1-second intervals
+        assert not (v1['heave'] == v2['heave'] == v3['heave'])
+
+    def test_roll_pitch_in_radians(self, env):
+        """Roll and pitch should be in radians (small values)."""
+        max_roll_rad = math.radians(2.0 + 1.5 + 0.8)
+        max_pitch_rad = math.radians(1.0 + 0.7 + 0.4)
+        for ms in range(0, 10000, 100):
+            t = _make_time_sec(ms / 1000.0)
+            w = env.getWaves(t)
+            assert abs(w['roll']) <= max_roll_rad + 0.001
+            assert abs(w['pitch']) <= max_pitch_rad + 0.001

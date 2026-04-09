@@ -303,11 +303,17 @@ class Dynamics(object):
                 last_long, last_lat, self.longitude, self.latitude)
             self.sog /= delta_t
 
-        # Update altitude from tide model
+        # Update altitude, roll, and pitch from environment
         if self.environment is not None:
-            self.altitude = self.environment.getEllipsoidalAltitude(
-                timestamp)
+            waves = self.environment.getWaves(timestamp)
+            self.altitude = (self.environment.getEllipsoidalAltitude(
+                timestamp) + waves['heave'])
+            self.roll = waves['roll']
+            self.pitch = waves['pitch']
             diagnostics['altitude'] = self.altitude
             diagnostics['tide'] = self.environment.getTide(timestamp)
+            diagnostics['heave'] = waves['heave']
+            diagnostics['wave_roll'] = math.degrees(waves['roll'])
+            diagnostics['wave_pitch'] = math.degrees(waves['pitch'])
 
         return diagnostics
