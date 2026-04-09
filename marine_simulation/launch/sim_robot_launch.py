@@ -181,7 +181,9 @@ def generate_launch_description():
                 emulate_tty=True,
                 parameters=[
                     {'platforms': ['ben']},
-                    {'environment.tide.speed_factor': tide_speed_factor},
+                    {'environment.tide.speed_factor': PythonExpression(
+                        expression=['float(', tide_speed_factor, ')']
+                    )},
                 ],
                 remappings=[
                     (
