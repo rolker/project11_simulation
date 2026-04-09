@@ -23,6 +23,11 @@ _DEFAULT_TIDE_PHASES = [105.6, 73.4, 142.1]        # degrees GMT
 # WGS84 ellipsoid to MLLW at Portsmouth Harbor from VDatum
 _DEFAULT_ELLIPSOID_TO_MLLW = -28.104  # meters
 
+# Mean sea level above MLLW (Z0) at Portsmouth Harbor
+# Harmonic constituents oscillate around MSL, so this offset makes
+# getTide() return height above MLLW rather than above MSL.
+_DEFAULT_MSL_ABOVE_MLLW = 1.43  # meters (NOAA Station 8423898)
+
 
 class Environment(object):
 
@@ -73,6 +78,12 @@ class Environment(object):
                 description='Static offset from WGS84 ellipsoid to MLLW '
                 'in meters (negative means MLLW is below ellipsoid)'))
         node.declare_parameter(
+            'environment.tide.msl_above_mllw',
+            _DEFAULT_MSL_ABOVE_MLLW,
+            ParameterDescriptor(
+                description='Mean sea level above MLLW in meters (Z0). '
+                'Harmonic constituents oscillate around this value.'))
+        node.declare_parameter(
             'environment.tide.speed_factor', 1.0,
             ParameterDescriptor(
                 description='Multiplier for constituent speeds — set >1 '
@@ -98,6 +109,8 @@ class Environment(object):
                 self.tide_phases = param.value
             if param.name == 'environment.tide.ellipsoid_to_mllw':
                 self.ellipsoid_to_mllw = param.value
+            if param.name == 'environment.tide.msl_above_mllw':
+                self.msl_above_mllw = param.value
             if param.name == 'environment.tide.speed_factor':
                 self.tide_speed_factor = param.value
 
@@ -124,7 +137,8 @@ class Environment(object):
         nanoseconds = timestamp.nanoseconds
         hours = nanoseconds / 3.6e12
 
-        tide = 0.0
+        # Z0 (mean sea level above MLLW) + harmonic variation
+        tide = self.msl_above_mllw
         n = min(len(self.tide_amplitudes),
                 len(self.tide_speeds),
                 len(self.tide_phases))

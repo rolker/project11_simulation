@@ -40,17 +40,21 @@ class TestTideModel:
         assert isinstance(result, float)
 
     def test_tide_amplitude_range(self, env):
-        """Verify tide stays within sum-of-amplitudes bounds."""
-        max_possible = 1.295 + 0.289 + 0.197  # sum of default amplitudes
+        """Verify tide stays within Z0 +/- sum-of-amplitudes bounds."""
+        max_amplitude = 1.295 + 0.289 + 0.197  # sum of default amplitudes
+        z0 = 1.43  # MSL above MLLW
         # Sample tide over a full M2 cycle (~12.42 hours)
         values = []
         for minutes in range(0, 750, 1):  # 12.5 hours in 1-minute steps
             t = _make_time(minutes / 60.0)
             values.append(env.getTide(t))
 
-        assert max(values) <= max_possible + 0.001
-        assert min(values) >= -max_possible - 0.001
-        # Should have significant variation (not stuck at zero)
+        assert max(values) <= z0 + max_amplitude + 0.001
+        assert min(values) >= z0 - max_amplitude - 0.001
+        # Most values should be positive (above MLLW); extreme lows
+        # can dip slightly below since MLLW is a mean, not a minimum
+        assert min(values) > -0.5
+        # Should have significant variation
         assert max(values) - min(values) > 1.0
 
     def test_tide_varies_over_time(self, env):
@@ -86,7 +90,7 @@ class TestTideModel:
 
         # Compute what tide would be with doubled speed manually
         hours = 6.0
-        accelerated = 0.0
+        accelerated = env.msl_above_mllw
         for amp, spd, pha in zip(
             env.tide_amplitudes,
             env.tide_speeds,
