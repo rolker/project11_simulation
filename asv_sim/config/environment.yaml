@@ -11,6 +11,17 @@
 # Wave model: superimposed sinusoidal components per axis.
 # Defaults represent a mild sea state.
 # Set all amplitudes to [0.0] to disable waves.
+#
+# Sensor noise (Layer 3) is per-platform, not per-environment.
+# Defaults in platform.py:
+#   sensor_noise.gps.horizontal: 0.02 m (RTK quality)
+#   sensor_noise.gps.vertical:   0.04 m
+#   sensor_noise.imu.orientation: 0.1 deg
+#   sensor_noise.imu.angular_rate: 0.01 rad/s
+#   sensor_noise.velocity.speed: 0.05 m/s
+#   sensor_noise.velocity.course: 1.0 deg
+# Override in platform configs (e.g., ben.yaml) under
+# platforms.<name>.sensor_noise.* — set to 0 to disable.
 
 asv_sim:
   ros__parameters:
