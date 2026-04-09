@@ -359,6 +359,13 @@ def generate_launch_description():
                         respawn=True,
                         respawn_delay=2,
                         emulate_tty=True,
+                        parameters=[{
+                            'sea_surface_frame': PythonExpression(
+                                expression=[
+                                    '"', namespace, '/map_tide"'
+                                ]
+                            ),
+                        }],
                     ),
                     LifecycleTransition(
                         lifecycle_node_names=(
