@@ -57,6 +57,7 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
     drix = LaunchConfiguration('drix')
     no_sim = LaunchConfiguration('no_sim')
+    tide_speed_factor = LaunchConfiguration('tide_speed_factor')
 
     namespace_arg = DeclareLaunchArgument(
         'namespace', default_value=TextSubstitution(text='ben')
@@ -75,6 +76,11 @@ def generate_launch_description():
     )
     no_sim_arg = DeclareLaunchArgument(
         'no_sim', default_value=TextSubstitution(text='false')
+    )
+    tide_speed_factor_arg = DeclareLaunchArgument(
+        'tide_speed_factor', default_value=TextSubstitution(text='10'),
+        description='Tide speed multiplier (10 = ~75 min cycle, '
+        '3600 = ~12 sec cycle, 1 = real-time)'
     )
 
     set_use_sim_time = SetParameter(
@@ -173,7 +179,10 @@ def generate_launch_description():
                 executable='asv_sim',
                 name='asv_sim',
                 emulate_tty=True,
-                parameters=[{'platforms': ['ben']}],
+                parameters=[
+                    {'platforms': ['ben']},
+                    {'environment.tide.speed_factor': tide_speed_factor},
+                ],
                 remappings=[
                     (
                         PathJoinSubstitution([namespace, 'position']),
@@ -396,6 +405,7 @@ def generate_launch_description():
         use_sim_time_arg,
         drix_arg,
         no_sim_arg,
+        tide_speed_factor_arg,
         set_use_sim_time,
         launch_ben_core_include,
         # launch_drix_core_include,
