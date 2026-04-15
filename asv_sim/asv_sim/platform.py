@@ -246,8 +246,10 @@ class Platform:
         twcs.header.stamp = self.dynamics.last_update.to_msg()
         twcs.header.frame_id = self.mru_frame
 
-        noisy_sog = (self.dynamics.sog
-                     + random.gauss(0.0, self.velocity_speed_noise))
+        noisy_sog = max(
+            0.0,
+            self.dynamics.sog
+            + random.gauss(0.0, self.velocity_speed_noise))
         noisy_cog = (self.dynamics.cog
                      + math.radians(
                          random.gauss(0.0, self.velocity_course_noise)))

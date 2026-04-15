@@ -88,6 +88,9 @@ class SonarSim(Node):
         if self.depth_publisher is not None:
             self.destroy_publisher(self.depth_publisher)
         self.depth_publisher = None
+        if self.detections_publisher is not None:
+            self.destroy_publisher(self.detections_publisher)
+        self.detections_publisher = None
         if self.ping_publisher is not None:
             self.destroy_publisher(self.ping_publisher)
         self.ping_publisher = None
@@ -95,7 +98,7 @@ class SonarSim(Node):
             self.destroy_subscription(self.tide_subscription)
             self.tide_subscription = None
         return super().on_cleanup(state)
-    
+
     def on_shutdown(self, state):
         if self.ping_timer is not None:
             self.destroy_timer(self.ping_timer)
@@ -103,9 +106,15 @@ class SonarSim(Node):
         if self.depth_publisher is not None:
             self.destroy_publisher(self.depth_publisher)
         self.depth_publisher = None
+        if self.detections_publisher is not None:
+            self.destroy_publisher(self.detections_publisher)
+        self.detections_publisher = None
         if self.ping_publisher is not None:
             self.destroy_publisher(self.ping_publisher)
         self.ping_publisher = None
+        if hasattr(self, 'tide_subscription') and self.tide_subscription is not None:
+            self.destroy_subscription(self.tide_subscription)
+            self.tide_subscription = None
         return super().on_shutdown(state)
 
     def ping_callback(self):

@@ -5,6 +5,7 @@ import math
 from asv_sim.environment import Environment
 import pytest
 import rclpy
+import rclpy.node
 import rclpy.time
 
 

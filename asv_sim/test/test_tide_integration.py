@@ -20,6 +20,7 @@ import launch_testing.actions
 import launch_testing.asserts
 
 import rclpy
+from rclpy.duration import Duration
 from rclpy.node import Node as RclpyNode
 from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Float64
@@ -101,7 +102,7 @@ class TestTideIntegration(unittest.TestCase):
 
     def _collect_samples(self, seconds=5.0):
         """Spin the node collecting messages for the given duration."""
-        end_time = self.node.get_clock().now() + rclpy.duration.Duration(
+        end_time = self.node.get_clock().now() + Duration(
             seconds=seconds)
         while rclpy.ok():
             rclpy.spin_once(self.node, timeout_sec=0.1)
