@@ -39,12 +39,15 @@ from launch.substitutions import LaunchConfiguration
 from launch.substitutions import PathJoinSubstitution
 from launch.substitutions import PythonExpression
 from launch.substitutions import TextSubstitution
+from launch_ros.actions import LifecycleNode
+from launch_ros.actions import LifecycleTransition
 from launch_ros.actions import Node
 from launch_ros.actions import PushROSNamespace
 from launch_ros.actions import SetParameter
 from launch_ros.actions import SetParametersFromFile
 from launch_ros.actions import SetRemap
 from launch_ros.substitutions import FindPackageShare
+from lifecycle_msgs.msg import Transition
 
 
 def generate_launch_description():
@@ -54,6 +57,7 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
     drix = LaunchConfiguration('drix')
     no_sim = LaunchConfiguration('no_sim')
+    tide_speed_factor = LaunchConfiguration('tide_speed_factor')
 
     namespace_arg = DeclareLaunchArgument(
         'namespace', default_value=TextSubstitution(text='ben')
@@ -72,6 +76,11 @@ def generate_launch_description():
     )
     no_sim_arg = DeclareLaunchArgument(
         'no_sim', default_value=TextSubstitution(text='false')
+    )
+    tide_speed_factor_arg = DeclareLaunchArgument(
+        'tide_speed_factor', default_value=TextSubstitution(text='10'),
+        description='Tide speed multiplier (10 = ~75 min cycle, '
+        '3600 = ~12 sec cycle, 1 = real-time)'
     )
 
     set_use_sim_time = SetParameter(
@@ -170,7 +179,12 @@ def generate_launch_description():
                 executable='asv_sim',
                 name='asv_sim',
                 emulate_tty=True,
-                parameters=[{'platforms': ['ben']}],
+                parameters=[
+                    {'platforms': ['ben']},
+                    {'environment.tide.speed_factor': PythonExpression(
+                        expression=['float(', tide_speed_factor, ')']
+                    )},
+                ],
                 remappings=[
                     (
                         PathJoinSubstitution([namespace, 'position']),
@@ -239,6 +253,10 @@ def generate_launch_description():
                                 '/sensors/mbes/original_soundings"'
                             ]
                         )
+                    ),
+                    SetRemap(
+                        src='tide_level',
+                        dst='/asv_sim/environment/tide_level'
                     ),
                     IncludeLaunchDescription(
                         PythonLaunchDescriptionSource(
@@ -328,6 +346,44 @@ def generate_launch_description():
                     )
                 ]
             ),
+            # sea_surface_estimator: estimates tide from odom z for
+            # the map_tide frame used by depth/costmap adjustments
+            GroupAction(
+                actions=[
+                    PushROSNamespace(namespace),
+                    LifecycleNode(
+                        package='mru_transform',
+                        executable='sea_surface_estimator',
+                        name='sea_surface_estimator',
+                        namespace='',
+                        respawn=True,
+                        respawn_delay=2,
+                        emulate_tty=True,
+                        parameters=[{
+                            'sea_surface_frame': PythonExpression(
+                                expression=[
+                                    '"', namespace, '/map_tide"'
+                                ]
+                            ),
+                        }],
+                    ),
+                    LifecycleTransition(
+                        lifecycle_node_names=(
+                            PythonExpression(
+                                expression=[
+                                    '"/',
+                                    namespace,
+                                    '/sea_surface_estimator"',
+                                ],
+                            ),
+                        ),
+                        transition_ids=(
+                            Transition.TRANSITION_CONFIGURE,
+                            Transition.TRANSITION_ACTIVATE,
+                        ),
+                    ),
+                ],
+            ),
         ],
         condition=UnlessCondition(no_sim),
     )
@@ -358,6 +414,7 @@ def generate_launch_description():
         use_sim_time_arg,
         drix_arg,
         no_sim_arg,
+        tide_speed_factor_arg,
         set_use_sim_time,
         launch_ben_core_include,
         # launch_drix_core_include,

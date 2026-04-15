@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
 import math
+import random
 from typing import List
 
 import asv_sim.asv_sim_node
 from asv_sim_msgs.srv import SetPose
 from geometry_msgs.msg import TwistWithCovarianceStamped
 from rcl_interfaces.msg import Parameter
+from rcl_interfaces.msg import ParameterDescriptor
 import rclpy
 from sensor_msgs.msg import Imu
 from sensor_msgs.msg import NavSatFix
@@ -15,6 +17,10 @@ from std_msgs.msg import Bool
 from std_msgs.msg import Float32
 from std_msgs.msg import Float64
 import transforms3d
+
+
+# Approximate meters-to-degrees at mid-latitudes
+_METERS_PER_DEG_LAT = 111320.0
 
 
 class Platform:
@@ -48,6 +54,34 @@ class Platform:
         node.declare_parameter(self.ns('start_heading'), 0.0)
 
         node.declare_parameter(self.ns('mru_frame'), 'mru')
+
+        # Sensor noise parameters (measurement uncertainty, Layer 3)
+        node.declare_parameter(
+            self.ns('sensor_noise.gps.horizontal'), 0.02,
+            ParameterDescriptor(
+                description='GPS horizontal noise std dev in meters '
+                '(0.02 = RTK, 2.0 = standalone)'))
+        node.declare_parameter(
+            self.ns('sensor_noise.gps.vertical'), 0.04,
+            ParameterDescriptor(
+                description='GPS vertical noise std dev in meters'))
+        node.declare_parameter(
+            self.ns('sensor_noise.imu.orientation'), 0.1,
+            ParameterDescriptor(
+                description='IMU orientation noise std dev in degrees '
+                '(applied to roll, pitch, yaw)'))
+        node.declare_parameter(
+            self.ns('sensor_noise.imu.angular_rate'), 0.01,
+            ParameterDescriptor(
+                description='IMU angular rate noise std dev in rad/s'))
+        node.declare_parameter(
+            self.ns('sensor_noise.velocity.speed'), 0.05,
+            ParameterDescriptor(
+                description='Velocity speed noise std dev in m/s'))
+        node.declare_parameter(
+            self.ns('sensor_noise.velocity.course'), 1.0,
+            ParameterDescriptor(
+                description='Velocity course noise std dev in degrees'))
 
         start = {}
         for k in self.start_params:
@@ -107,6 +141,20 @@ class Platform:
             if param.name == self.ns('mru_frame'):
                 self.mru_frame = param.value
 
+            # Sensor noise parameters
+            if param.name == self.ns('sensor_noise.gps.horizontal'):
+                self.gps_horizontal_noise = param.value
+            if param.name == self.ns('sensor_noise.gps.vertical'):
+                self.gps_vertical_noise = param.value
+            if param.name == self.ns('sensor_noise.imu.orientation'):
+                self.imu_orientation_noise = param.value
+            if param.name == self.ns('sensor_noise.imu.angular_rate'):
+                self.imu_angular_rate_noise = param.value
+            if param.name == self.ns('sensor_noise.velocity.speed'):
+                self.velocity_speed_noise = param.value
+            if param.name == self.ns('sensor_noise.velocity.course'):
+                self.velocity_course_noise = param.value
+
     def ns(self, key: str) -> str:
         return 'platforms.' + self.name + '.' + key
 
@@ -156,31 +204,56 @@ class Platform:
         nsf.header.stamp = self.dynamics.last_update.to_msg()
         nsf.header.frame_id = self.mru_frame
         nsf.status.status = NavSatStatus.STATUS_FIX
-        nsf.latitude = math.degrees(self.dynamics.latitude)
-        nsf.longitude = math.degrees(self.dynamics.longitude)
+
+        # GPS position with sensor noise
+        lat_deg = math.degrees(self.dynamics.latitude)
+        lon_deg = math.degrees(self.dynamics.longitude)
+        lat_noise_deg = (random.gauss(0.0, self.gps_horizontal_noise)
+                         / _METERS_PER_DEG_LAT)
+        cos_lat = math.cos(self.dynamics.latitude)
+        lon_noise_deg = (random.gauss(0.0, self.gps_horizontal_noise)
+                         / (_METERS_PER_DEG_LAT * max(cos_lat, 0.01)))
+        nsf.latitude = lat_deg + lat_noise_deg
+        nsf.longitude = lon_deg + lon_noise_deg
+        nsf.altitude = (self.dynamics.altitude
+                        + random.gauss(0.0, self.gps_vertical_noise))
         self.position_publisher.publish(nsf)
 
+        # IMU orientation with sensor noise
         imu = Imu()
         imu.header.stamp = self.dynamics.last_update.to_msg()
         imu.header.frame_id = self.mru_frame
-        yaw = math.radians(90.0) - self.dynamics.heading
-        q = transforms3d.taitbryan.euler2quat(yaw, 0, 0)
+        orientation_noise_rad = math.radians(self.imu_orientation_noise)
+        yaw = (math.radians(90.0) - self.dynamics.heading
+               + random.gauss(0.0, orientation_noise_rad))
+        pitch = (self.dynamics.pitch
+                 + random.gauss(0.0, orientation_noise_rad))
+        roll = (self.dynamics.roll
+                + random.gauss(0.0, orientation_noise_rad))
+        q = transforms3d.taitbryan.euler2quat(yaw, pitch, roll)
         imu.orientation.x = q[1]
         imu.orientation.y = q[2]
         imu.orientation.z = q[3]
         imu.orientation.w = q[0]
-        imu.angular_velocity.z = -self.dynamics.yaw_rate
+        imu.angular_velocity.z = (-self.dynamics.yaw_rate
+                                  + random.gauss(
+                                      0.0, self.imu_angular_rate_noise))
         imu.linear_acceleration.x = self.dynamics.a
         self.orientation_publisher.publish(imu)
 
+        # Velocity with sensor noise
         twcs = TwistWithCovarianceStamped()
         twcs.header.stamp = self.dynamics.last_update.to_msg()
         twcs.header.frame_id = self.mru_frame
 
-        course_angle = math.radians(90.0) - self.dynamics.cog
-        sin_cog = math.sin(course_angle)
-        cos_cog = math.cos(course_angle)
-
-        twcs.twist.twist.linear.x = cos_cog * self.dynamics.sog
-        twcs.twist.twist.linear.y = sin_cog * self.dynamics.sog
+        noisy_sog = max(
+            0.0,
+            self.dynamics.sog
+            + random.gauss(0.0, self.velocity_speed_noise))
+        noisy_cog = (self.dynamics.cog
+                     + math.radians(
+                         random.gauss(0.0, self.velocity_course_noise)))
+        course_angle = math.radians(90.0) - noisy_cog
+        twcs.twist.twist.linear.x = math.cos(course_angle) * noisy_sog
+        twcs.twist.twist.linear.y = math.sin(course_angle) * noisy_sog
         self.velocity_publisher.publish(twcs)

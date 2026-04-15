@@ -63,6 +63,7 @@ class Dynamics(object):
         self.heading = math.radians(heading)
         self.pitch = 0.0
         self.roll = 0.0
+        self.altitude = 0.0
 
         self.sog = 0.0
         self.cog = 0.0
@@ -301,5 +302,18 @@ class Dynamics(object):
             self.cog, self.sog = geodesic.inverse(
                 last_long, last_lat, self.longitude, self.latitude)
             self.sog /= delta_t
+
+        # Update altitude, roll, and pitch from environment
+        if self.environment is not None:
+            waves = self.environment.getWaves(timestamp)
+            self.altitude = (self.environment.getEllipsoidalAltitude(
+                timestamp) + waves['heave'])
+            self.roll = waves['roll']
+            self.pitch = waves['pitch']
+            diagnostics['altitude'] = self.altitude
+            diagnostics['tide'] = self.environment.getTide(timestamp)
+            diagnostics['heave'] = waves['heave']
+            diagnostics['wave_roll'] = math.degrees(waves['roll'])
+            diagnostics['wave_pitch'] = math.degrees(waves['pitch'])
 
         return diagnostics
