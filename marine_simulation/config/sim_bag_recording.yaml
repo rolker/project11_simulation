@@ -1,0 +1,38 @@
+/**:
+  ros__parameters:
+    record:
+      all_topics: false
+      topics:
+      # Mission manager / autonomy
+      - /ben/marine/heartbeat
+      - /ben/marine/status/mission_manager
+      - /ben/marine/response
+      - /marine/platforms
+      # Behavior tree
+      - /ben/behavior_tree_log
+      - /ben/run_tasks/_action/status
+      - /ben/run_tasks/_action/send_goal
+      # Nav2 actions
+      - /ben/follow_path/_action/status
+      - /ben/compute_path_through_poses/_action/status
+      - /ben/hover/_action/status
+      # Planning and control
+      - /ben/plan
+      - /ben/path_follower_visualization
+      - /ben/hover_visualization
+      - /ben/collision_monitor_state
+      - /ben/local_costmap/published_footprint
+      - /ben/piloting_mode/autonomous/cmd_vel
+      # Position / velocity / state
+      - /ben/odom
+      - /ben/sensors/nav/position
+      - /ben/sensors/nav/orientation
+      - /ben/sensors/nav/velocity
+      # TF and diagnostics
+      - /tf
+      - /tf_static
+      - /rosout
+      - /diagnostics
+    storage:
+      max_bagfile_duration: 300
+      storage_preset_profile: zstd_fast

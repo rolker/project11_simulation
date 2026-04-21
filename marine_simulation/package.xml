@@ -25,6 +25,7 @@
   <exec_depend>ben_project11</exec_depend>
   <exec_depend>camp</exec_depend>
   <exec_depend>lifecycle_msgs</exec_depend>
+  <exec_depend>rosbag2_transport</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
 
