@@ -28,6 +28,8 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 
+import datetime
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.actions import GroupAction
@@ -39,12 +41,15 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch.substitutions import PathJoinSubstitution
 from launch.substitutions import TextSubstitution
+from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
     background_chart = LaunchConfiguration('background_chart')
     enable_bridge = LaunchConfiguration('enable_bridge')
+    record_bag = LaunchConfiguration('record_bag')
+    bag_directory = LaunchConfiguration('bag_directory')
 
     background_chart_arg = DeclareLaunchArgument(
         'background_chart', default_value=PathJoinSubstitution(
@@ -54,6 +59,21 @@ def generate_launch_description():
 
     enable_bridge_arg = DeclareLaunchArgument(
         'enable_bridge', default_value=TextSubstitution(text='false')
+    )
+
+    record_bag_arg = DeclareLaunchArgument(
+        'record_bag', default_value=TextSubstitution(text='true'),
+        description='Enable rosbag recording of simulation telemetry'
+    )
+
+    datetime_str = datetime.datetime.now().strftime('%Y-%m-%dT%H.%M.%S')
+    default_bag_dir = PathJoinSubstitution([
+        TextSubstitution(text='~/data/logs/sim/'),
+        TextSubstitution(text=datetime_str),
+    ])
+    bag_directory_arg = DeclareLaunchArgument(
+        'bag_directory', default_value=default_bag_dir,
+        description='Output directory for bag recording'
     )
 
     launch_sim_robot_include = IncludeLaunchDescription(
@@ -113,13 +133,32 @@ def generate_launch_description():
         ]
     )
 
+    bag_recorder = Node(
+        package='rosbag2_transport',
+        executable='recorder',
+        name='sim_logger',
+        condition=IfCondition(record_bag),
+        parameters=[
+            PathJoinSubstitution([
+                FindPackageShare('marine_simulation'),
+                'config',
+                'sim_bag_recording.yaml'
+            ]),
+            {'storage.uri': bag_directory},
+        ],
+        emulate_tty=True
+    )
+
     return LaunchDescription([
         background_chart_arg,
         enable_bridge_arg,
+        record_bag_arg,
+        bag_directory_arg,
         LogInfo(
             condition=IfCondition(enable_bridge),
             msg=TextSubstitution(text='Bridge enabled')
         ),
         launch_sim_robot_include,
-        launch_sim_operator_group
+        launch_sim_operator_group,
+        bag_recorder,
     ])
