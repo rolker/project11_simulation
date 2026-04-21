@@ -40,6 +40,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch.substitutions import PathJoinSubstitution
+from launch.substitutions import EnvironmentVariable
 from launch.substitutions import TextSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -68,7 +69,8 @@ def generate_launch_description():
 
     datetime_str = datetime.datetime.now().strftime('%Y-%m-%dT%H.%M.%S')
     default_bag_dir = PathJoinSubstitution([
-        TextSubstitution(text='~/data/logs/sim/'),
+        EnvironmentVariable('HOME'),
+        TextSubstitution(text='data/logs/sim'),
         TextSubstitution(text=datetime_str),
     ])
     bag_directory_arg = DeclareLaunchArgument(
