@@ -39,15 +39,12 @@ from launch.substitutions import LaunchConfiguration
 from launch.substitutions import PathJoinSubstitution
 from launch.substitutions import PythonExpression
 from launch.substitutions import TextSubstitution
-from launch_ros.actions import LifecycleNode
-from launch_ros.actions import LifecycleTransition
 from launch_ros.actions import Node
 from launch_ros.actions import PushROSNamespace
 from launch_ros.actions import SetParameter
 from launch_ros.actions import SetParametersFromFile
 from launch_ros.actions import SetRemap
 from launch_ros.substitutions import FindPackageShare
-from lifecycle_msgs.msg import Transition
 
 
 def generate_launch_description():
@@ -345,44 +342,6 @@ def generate_launch_description():
                         ]
                     )
                 ]
-            ),
-            # sea_surface_estimator: estimates tide from odom z for
-            # the map_tide frame used by depth/costmap adjustments
-            GroupAction(
-                actions=[
-                    PushROSNamespace(namespace),
-                    LifecycleNode(
-                        package='mru_transform',
-                        executable='sea_surface_estimator',
-                        name='sea_surface_estimator',
-                        namespace='',
-                        respawn=True,
-                        respawn_delay=2,
-                        emulate_tty=True,
-                        parameters=[{
-                            'sea_surface_frame': PythonExpression(
-                                expression=[
-                                    '"', namespace, '/map_tide"'
-                                ]
-                            ),
-                        }],
-                    ),
-                    LifecycleTransition(
-                        lifecycle_node_names=(
-                            PythonExpression(
-                                expression=[
-                                    '"/',
-                                    namespace,
-                                    '/sea_surface_estimator"',
-                                ],
-                            ),
-                        ),
-                        transition_ids=(
-                            Transition.TRANSITION_CONFIGURE,
-                            Transition.TRANSITION_ACTIVATE,
-                        ),
-                    ),
-                ],
             ),
         ],
         condition=UnlessCondition(no_sim),
