@@ -219,7 +219,6 @@ behavior_server:
       maximum_speed: 1.0
       minimum_speed: 0.15
       maximum_rotation_speed: 1.5
-      deceleration: -0.45
       generate_visualization: true
 
     local_frame: <tf_prefix>/odom
