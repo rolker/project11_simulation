@@ -14,6 +14,7 @@
       - /ben/run_tasks/_action/send_goal
       # Nav2 actions
       - /ben/follow_path/_action/status
+      - /ben/follow_path/_action/feedback
       - /ben/compute_path_through_poses/_action/status
       - /ben/hover/_action/status
       # Planning and control
@@ -23,6 +24,18 @@
       - /ben/collision_monitor_state
       - /ben/local_costmap/published_footprint
       - /ben/piloting_mode/autonomous/cmd_vel
+      # Controller-internal (line-following diagnosis). pid_state carries the
+      # cross-track error + PID terms — the crab follower feeds cross_track_error
+      # into the PID, so this is the only published copy of cross-track (it is
+      # otherwise DEBUG-logged only). received_global_plan is the exact path the
+      # controller is tracking via setPlan.
+      - /ben/FollowPath/pid/pid_state
+      - /ben/received_global_plan
+      # Optional, heavier (full grids at update rate) — uncomment to debug whether
+      # the chart/obstacle layer is nudging the boat off the line:
+      # - /ben/local_costmap/costmap
+      # - /ben/local_costmap/costmap_updates
+      # - /ben/plan_smoothed
       # Position / velocity / state
       - /ben/odom
       - /ben/sensors/nav/position
