@@ -274,31 +274,44 @@ def generate_launch_description():
                     ]),
                     GroupAction(
                         actions=[
+                            # detections_to_pointcloud sources the error model's
+                            # pose from TF (roll/pitch from level_frame, heave
+                            # from tide_frame) + /odom for SOG, since
+                            # cube_bathymetry #31/#33 retired the old
+                            # NavigationSensors topic path. Its frame params
+                            # default to unprefixed names, so the namespaced sim
+                            # MUST set them or the attitude TF lookup misses ->
+                            # NaN uncertainty -> empty grid. mru_transform_node
+                            # broadcasts <ns>/base_link_north_up and (via
+                            # sea_surface_estimator) <ns>/map_tide.
                             SetParameter(
-                                name='sensors.default.topics.position',
+                                name='base_link_frame',
+                                value=PythonExpression(
+                                    expression=['"', namespace, '/base_link"']
+                                )
+                            ),
+                            SetParameter(
+                                name='level_frame',
                                 value=PythonExpression(
                                     expression=[
-                                        '"/', namespace,
-                                        '/sensors/nav/position"'
+                                        '"', namespace, '/base_link_north_up"'
                                     ]
                                 )
                             ),
                             SetParameter(
-                                name='sensors.default.topics.orientation',
+                                name='tide_frame',
                                 value=PythonExpression(
-                                    expression=[
-                                        '"/', namespace,
-                                        '/sensors/nav/orientation"'
-                                    ]
+                                    expression=['"', namespace, '/map_tide"']
                                 )
                             ),
-                            SetParameter(
-                                name='sensors.default.topics.velocity',
-                                value=PythonExpression(
-                                    expression=[
-                                        '"/', namespace,
-                                        '/sensors/nav/velocity"'
-                                    ]
+                            # Speed over ground for the error model. The mbes_sim
+                            # group's odom remap does not reach this group, and
+                            # under this namespace a bare `odom` would resolve to
+                            # <ns>/sensors/mbes/odom; point it at the real topic.
+                            SetRemap(
+                                src='odom',
+                                dst=PythonExpression(
+                                    expression=['"/', namespace, '/odom"']
                                 )
                             ),
                             IncludeLaunchDescription(
