@@ -23,13 +23,24 @@ The `drix` flag is the existing alternate-platform precedent; the MBES + cube gr
 1. **Add a `platform` arg** (`ben` default, `bizzy`) to `sim_robot_launch.py` + pass-through from
    `simulator_launch.py` (which currently hardcodes `namespace='ben'` at its include). Drive the
    conditional swaps below off it, mirroring the `drix` pattern.
-2. **Autonomy bringup swap** — for `bizzy`, bring up BizzyBoat's Nav2 stack (model 240 +
-   `bizzyboat_project11/config/nav2_overlay.yaml`) with `use_sim_time` instead of
-   `ben_core_launch.py`. Exact mechanism = **Open Question 1**.
-3. **`asv_sim/config/bizzyboat.yaml`** — mirror `ben.yaml`: `platforms.bizzy.model`,
+2. **Autonomy bringup swap (anti-drift)** — for `bizzy`, include a **sim-aware BizzyBoat core
+   launch** that reuses the boat's REAL config (`nav2_overlay.yaml` + base) and layers a small new
+   `bizzyboat_sim.yaml` overlay only under `is_simulator` — mirroring `ben_core_launch.py:103-110`
+   (`ben.yaml` + `ben_sim.yaml`). The sim repo includes it with `is_simulator:=true`, exactly as it
+   includes `ben_core_launch.py` today. **No config duplication: sim and field read one source.**
+   Bizzy's current `core_launch.py` is hardware-coupled (real FCU `/dev/fcu` via mavros + sensor
+   drivers), so add a thin **`bizzyboat_sim_core_launch.py`** (in `bizzyboat_project11`) that brings
+   up only the sim-shareable stack (autonomy + nav2 + mru_transform + sea_surface_estimator),
+   reusing the same config files. (Cross-repo change — see Scope.) Cleaner long-term: split bizzy's
+   bringup into autonomy-vs-hardware like Ben's.
+3. **`asv_sim/config/bizzyboat.yaml`** — mirror `ben.yaml`: `platforms.bizzy.model: echoboat240`,
    `mru_frame: bizzy/motion_sensor`, `start_lat: 42.990559`, `start_lon: -71.392958`,
-   `start_heading: <353.6 or ENU-equiv>` (06-12 last pose). Confirm `start_heading` convention
-   against `asv_sim` (compass vs ENU-yaw) — **Open Question 2**.
+   `start_heading: 353.6` (06-12 last pose; **compass-true degrees** confirmed via `platform.py:227`
+   `yaw=90-heading` + `geodesic.py:24`).
+3b. **`asv_sim/config/echoboat240.yaml`** (new) — `models.echoboat240.*` mirroring `cw4.yaml` with
+   240 mass/length/speed + `propulsion_type: jet` (thrust proxy, per Roland). **Fidelity gap:** the
+   240 yaws by vectored thrust (rotates near zero speed); `cw4`'s flow-dependent rudder model won't.
+   Add a vectored-yaw term to `asv_sim/dynamics.py` so the model yaws at low/zero speed.
 4. **`platforms` + config selection** — replace hardcoded `['ben']` (`:180`) with the namespace;
    load `bizzyboat.yaml` (+ model config) under `IfCondition(platform==bizzy)`.
 5. **No current** — set `asv_sim` environment current to 0 for the bizzy path (verify param name
@@ -51,14 +62,25 @@ The `drix` flag is the existing alternate-platform precedent; the MBES + cube gr
 
 ## Files to Change
 
+**Repo `unh_marine_simulation`:**
+
 | File | Change |
 |------|--------|
-| `marine_simulation/launch/sim_robot_launch.py` | Add `platform` arg; conditional core-launch + config + `platforms` namespace; MBES `grid_file` SetParameter; zero current |
+| `marine_simulation/launch/sim_robot_launch.py` | Add `platform` arg; conditional core-launch (ben vs bizzy sim-core) + config + `platforms` namespace; MBES `grid_file` SetParameter; zero current |
 | `marine_simulation/launch/simulator_launch.py` | Add/forward `platform` (+ namespace) arg |
 | `marine_simulation/launch/bizzyboat_massabesic_launch.py` (new) | One-line BizzyBoat-Massabesic entry |
-| `asv_sim/config/bizzyboat.yaml` (new) | Platform model + 06-12 spawn pose, no current |
+| `asv_sim/config/bizzyboat.yaml` (new) | `echoboat240` model + 06-12 spawn pose (353.6° compass), no current |
+| `asv_sim/config/echoboat240.yaml` (new) | `models.echoboat240.*` — 240 dynamics, jet proxy |
+| `asv_sim/asv_sim/dynamics.py` | Vectored-yaw term so the model yaws at low/zero speed |
 | `<obstacle emulator>.py` (new) + launch | Seeded random obstacles → `<ns>/sea_surface/lethal_grid` within 25 m |
-| `*/setup.py` / `CMakeLists.txt` | Register new node/launch/config |
+| `*/setup.py` | Register new node/launch/config |
+
+**Repo `unh_echoboats_project11` (cross-repo):**
+
+| File | Change |
+|------|--------|
+| `bizzyboat_project11/launch/bizzyboat_sim_core_launch.py` (new) | Sim-shareable bringup (autonomy + nav2 + transforms), reuses real `bizzyboat.yaml`/`nav2_overlay.yaml`, layers `bizzyboat_sim.yaml` under `is_simulator` — mirrors `ben_core_launch.py` |
+| `bizzyboat_project11/config/bizzyboat_sim.yaml` (new) | Sim deltas only (nav from asv_sim, sim tide threshold) — mirrors `ben_sim.yaml`. **No copy of nav2_overlay.** |
 
 ## Principles Self-Check
 
@@ -85,17 +107,19 @@ The `drix` flag is the existing alternate-platform precedent; the MBES + cube gr
 
 ## Open Questions
 
-1. **Bizzy autonomy bringup in sim** — cleanest path to run BizzyBoat's Nav2 (model 240 +
-   `nav2_overlay.yaml`) under sim_time: (a) new sim-aware bringup *in the sim repo* pointing
-   `nav2_bringup` at bizzy's params (keeps changes one-repo, avoids real-hardware drivers), or
-   (b) add an `is_simulator` path to `bizzyboat_project11` (cross-repo). Lean (a) — the bug is
-   pure Nav2, no hardware needed. Confirm with Roland.
-2. **`start_heading` convention** in `asv_sim` (compass-true vs ENU-yaw) — set 353.6 or -6.5 accordingly.
-3. **Hydro model for bizzy** — reuse `cw4` for now (planner bug is model-independent) or add an
-   echoboat-240 model config? Proposed: reuse `cw4`, follow-up for a real model.
+1. **Bizzy autonomy bringup in sim** — RESOLVED (anti-drift): mirror Ben — a sim-aware bringup in
+   `bizzyboat_project11` reusing the boat's real config + a small `bizzyboat_sim.yaml` overlay; the
+   sim includes it with `is_simulator:=true`. Cross-repo, but the only no-duplication path. *Pending
+   Roland's final OK on the cross-repo change + the thin-sim-core (ii) vs full-split (i) choice.*
+2. **`start_heading` convention** — RESOLVED: compass-true degrees (`platform.py:227`,
+   `geodesic.py:24`); use 353.6.
+3. **Hydro model for bizzy** — RESOLVED: new `echoboat240` model (mimic real 240, jet as thrust
+   proxy), plus a vectored-yaw `dynamics.py` extension so it yaws at zero speed.
 
 ## Estimated Scope
 
-Two PRs on a stacked branch: **PR-A** scaffolding (platform arg + bizzy config + MBES grid +
-launch entry, Ben path unbroken); **PR-B** obstacle emulator + the reproduction write-up. Both
-target `jazzy`. The Phase-4 `bathymetry_geotiff_layer` fix is a separate issue/repo.
+Cross-repo, stacked: **PR-A** (`unh_echoboats_project11`) sim-aware bizzy core launch +
+`bizzyboat_sim.yaml`; **PR-B** (`unh_marine_simulation`) platform arg + `bizzyboat.yaml` +
+`echoboat240` model + `dynamics.py` vectored-yaw + MBES grid + launch entry (Ben path unbroken);
+**PR-C** (`unh_marine_simulation`) obstacle emulator + reproduction write-up. All target `jazzy`.
+The Phase-4 `bathymetry_geotiff_layer` fix is a separate issue/repo.
