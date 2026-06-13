@@ -38,9 +38,13 @@ The `drix` flag is the existing alternate-platform precedent; the MBES + cube gr
    `start_heading: 353.6` (06-12 last pose; **compass-true degrees** confirmed via `platform.py:227`
    `yaw=90-heading` + `geodesic.py:24`).
 3b. **`asv_sim/config/echoboat240.yaml`** (new) — `models.echoboat240.*` mirroring `cw4.yaml` with
-   240 mass/length/speed + `propulsion_type: jet` (thrust proxy, per Roland). **Fidelity gap:** the
-   240 yaws by vectored thrust (rotates near zero speed); `cw4`'s flow-dependent rudder model won't.
-   Add a vectored-yaw term to `asv_sim/dynamics.py` so the model yaws at low/zero speed.
+   240 mass/length/speed + `propulsion_type: jet`. **No `dynamics.py` change needed:** the jet
+   branch (`dynamics.py:229-254`) already vectors yaw — `yaw_thrust = thrust·sin(rudder)` with
+   `thrust ∝ rpm` (not hull speed), so it pivots at zero forward speed (requires throttle, like the
+   real vectored thrusters). Tune jet params to the empirical targets: `go_straight_coefficient`
+   (yaw damping) → ~0.9-1.0 rad/s cap; `mass`+`max_power` → 0.6 m/s² launch + 1.9 m/s top;
+   `drag_coefficient` → ~10 s coast-down. (The prop branch is flow-dependent and would NOT pivot —
+   jet is the correct proxy, confirming Roland's call.)
 4. **`platforms` + config selection** — replace hardcoded `['ben']` (`:180`) with the namespace;
    load `bizzyboat.yaml` (+ model config) under `IfCondition(platform==bizzy)`.
 5. **No current** — set `asv_sim` environment current to 0 for the bizzy path (verify param name
@@ -70,8 +74,7 @@ The `drix` flag is the existing alternate-platform precedent; the MBES + cube gr
 | `marine_simulation/launch/simulator_launch.py` | Add/forward `platform` (+ namespace) arg |
 | `marine_simulation/launch/bizzyboat_massabesic_launch.py` (new) | One-line BizzyBoat-Massabesic entry |
 | `asv_sim/config/bizzyboat.yaml` (new) | `echoboat240` model + 06-12 spawn pose (353.6° compass), no current |
-| `asv_sim/config/echoboat240.yaml` (new) | `models.echoboat240.*` — 240 dynamics, jet proxy |
-| `asv_sim/asv_sim/dynamics.py` | Vectored-yaw term so the model yaws at low/zero speed |
+| `asv_sim/config/echoboat240.yaml` (new) | `models.echoboat240.*` — 240 dynamics, `propulsion_type: jet` (jet branch already vectors yaw; tune to empirical targets) |
 | `<obstacle emulator>.py` (new) + launch | Seeded random obstacles → `<ns>/sea_surface/lethal_grid` within 25 m |
 | `*/setup.py` | Register new node/launch/config |
 
@@ -113,13 +116,35 @@ The `drix` flag is the existing alternate-platform precedent; the MBES + cube gr
    Roland's final OK on the cross-repo change + the thin-sim-core (ii) vs full-split (i) choice.*
 2. **`start_heading` convention** — RESOLVED: compass-true degrees (`platform.py:227`,
    `geodesic.py:24`); use 353.6.
-3. **Hydro model for bizzy** — RESOLVED: new `echoboat240` model (mimic real 240, jet as thrust
-   proxy), plus a vectored-yaw `dynamics.py` extension so it yaws at zero speed.
+3. **Hydro model for bizzy** — RESOLVED: new `echoboat240` model, `propulsion_type: jet`. The jet
+   branch already vectors yaw (pivots at zero speed) — **no `dynamics.py` extension needed**. Tune
+   jet params to empirical targets derived from Friday's odom + `bizzyboat_performance.md`.
+
+## echoboat240 model spec (empirical, for asv_sim)
+
+Derived from Friday's odom + the boat's current-corrected dynamics doc + datasheet
+(Roland: derive from bag + look up mass). Targets the asv_sim model params to reproduce:
+
+| Quantity | Value | Source |
+|---|---|---|
+| Hull L × W | 2.4 m × 0.9 m | manual §1.3 (`platform.yaml`) |
+| Hull mass | ~159 kg (no battery/payload; **operating mass higher** with M3/batteries/sensors — refine) | Seafloor datasheet |
+| Max forward speed | **1.9 m/s** STW (current-corrected) | `bizzyboat_performance.md` (Friday SOG max 2.14 incl. current) |
+| Cruise | 1.52 m/s | `bizzyboat_performance.md` |
+| Hard-launch accel | ~0.6 m/s² peak, τ≈2.5 s | `bizzyboat_performance.md` |
+| Coast-down decel | ~0.15 m/s², τ≈9–10 s (~10–15 m to stop) | `bizzyboat_performance.md` |
+| Yaw-rate cap / pivot | 1.0 rad/s cap; **~0.9 rad/s pivot at full throttle (vectored → yaw at v≈0)** | `bizzyboat_performance.md`; Friday odom peak 1.11 rad/s |
+
+Model build (`propulsion_type: jet` — the jet branch already vectors yaw, pivots at zero speed):
+set `max_speed≈1.9`, `mass≈` operating estimate, tune `max_power`/`drag_coefficient` to hit
+~0.6 m/s² launch + τ≈10 s coast, and `go_straight_coefficient` (yaw damping) so full-throttle
+full-steer settles at ~0.9-1.0 rad/s. Reproduces real 240 feel, not datasheet guesses. No
+`dynamics.py` change.
 
 ## Estimated Scope
 
 Cross-repo, stacked: **PR-A** (`unh_echoboats_project11`) sim-aware bizzy core launch +
 `bizzyboat_sim.yaml`; **PR-B** (`unh_marine_simulation`) platform arg + `bizzyboat.yaml` +
-`echoboat240` model + `dynamics.py` vectored-yaw + MBES grid + launch entry (Ben path unbroken);
+`echoboat240` model (jet, no dynamics.py change) + MBES grid + launch entry (Ben path unbroken);
 **PR-C** (`unh_marine_simulation`) obstacle emulator + reproduction write-up. All target `jazzy`.
 The Phase-4 `bathymetry_geotiff_layer` fix is a separate issue/repo.
