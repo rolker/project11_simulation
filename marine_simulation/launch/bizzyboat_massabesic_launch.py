@@ -8,7 +8,7 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-    """BizzyBoat (EchoBoat 240) simulated at Lake Massabesic (non-Gazebo).
+    """Launch the BizzyBoat (EchoBoat 240) sim at Lake Massabesic (non-Gazebo).
 
     One-line entry: wraps sim_robot_launch.py with platform:=bizzy. Brings up
     the boat's real autonomy + nav2 stack (via bizzyboat_sim_core_launch.py,
@@ -29,8 +29,10 @@ def generate_launch_description():
             FindPackageShare('mbes_sim'), 'data', 'US5NH02M.tiff'
         ]),
         description='Massabesic ground-truth bathymetry GeoTIFF for the '
-        'simulated MBES. Defaults to the packaged sample until a single '
-        'Massabesic bathymetry grid is built (follow-up).'
+        'simulated MBES. NOTE: the default packaged sample is a Portsmouth NH '
+        'grid (~100 km away), so the MBES produces NO depth/detections at the '
+        'Massabesic spawn until a real Massabesic bathymetry grid is built and '
+        'passed here (follow-up).'
     )
 
     return LaunchDescription([
