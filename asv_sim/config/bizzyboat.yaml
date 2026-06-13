@@ -1,0 +1,18 @@
+asv_sim:
+  ros__parameters:
+    platforms.bizzy.model: echoboat240
+    # BizzyBoat reports nav in base_link (mavros child_frame_id; no separate
+    # motion_sensor frame in the URDF), so the sim nav is stamped there too.
+    platforms.bizzy.mru_frame: bizzy/base_link
+
+    # Lake Massabesic — last recorded pose from the 2026-06-12 deployment
+    # (mavros/global_position/global + SBG gps_hdt true heading, end of bag).
+    # start_heading is compass-true degrees (platform.py: yaw = 90 - heading).
+    platforms.bizzy.start_lat: 42.99055860
+    platforms.bizzy.start_lon: -71.39295800
+    platforms.bizzy.start_heading: 353.6
+
+    # No current in the sim (Roland) — these are global asv_sim environment
+    # params (not per-platform); loading this file zeroes the current.
+    environment.current.speed: 0.0
+    environment.current.noise.speed: 0.0
