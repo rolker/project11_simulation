@@ -31,7 +31,10 @@ asv_sim:
     models.echoboat240.propulsion_type:     jet
     models.echoboat240.max_rpm:             3200.0   # abstract engine speed (full throttle)
     models.echoboat240.idle_rpm:            750.0
-    models.echoboat240.clutch_engagement_rpm: 0.0    # always engaged (electric)
+    # Engage above idle so a zero-throttle boat produces NO thrust and holds
+    # station (electric thrusters idle to zero). With engagement <= idle the
+    # jet model feeds idle_rpm thrust and the boat creeps ~1.2 m/s uncommanded.
+    models.echoboat240.clutch_engagement_rpm: 800.0
     models.echoboat240.gearbox_ratio:       1.0
     models.echoboat240.max_rpm_change_rate: 1000.0   # ~2.5 s spin-up (hard-launch tau)
     models.echoboat240.bucket_efficiency:   0.2      # reverse thrust fraction (~1.4 m/s rev)
