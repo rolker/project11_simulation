@@ -32,6 +32,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.actions import GroupAction
 from launch.actions import IncludeLaunchDescription
+from launch.actions import OpaqueFunction
 from launch.conditions import IfCondition
 from launch.conditions import UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -185,6 +186,34 @@ def generate_launch_description():
         ],
     )
 
+    def make_asv_sim_node(context, *args, **kwargs):
+        # Resolve the namespace to a plain string. asv_sim's `platforms` param
+        # is a STRING_ARRAY, but a single-element list holding a
+        # LaunchConfiguration substitution normalizes to a scalar string
+        # (launch_ros collapses substitution-lists), which fails the node's
+        # type check and crashes it on startup. Resolving here keeps a real
+        # one-element list and fully resolves the remappings.
+        ns = LaunchConfiguration('namespace').perform(context)
+        return [Node(
+            package='asv_sim',
+            executable='asv_sim',
+            name='asv_sim',
+            emulate_tty=True,
+            parameters=[
+                {'platforms': [ns]},
+                {'environment.tide.speed_factor': PythonExpression(
+                    expression=['float(', tide_speed_factor, ')']
+                )},
+            ],
+            remappings=[
+                (ns + '/position', ns + '/sensors/nav/position'),
+                (ns + '/orientation', ns + '/sensors/nav/orientation'),
+                (ns + '/velocity', ns + '/sensors/nav/velocity'),
+                (ns + '/throttle', ns + '/control/throttle'),
+                (ns + '/rudder', ns + '/control/rudder'),
+            ],
+        )]
+
     sim_group = GroupAction(
         actions=[
             SetParametersFromFile(
@@ -225,50 +254,7 @@ def generate_launch_description():
                 ]),
                 condition=IfCondition(drix)
             ),
-            Node(
-                package='asv_sim',
-                executable='asv_sim',
-                name='asv_sim',
-                emulate_tty=True,
-                parameters=[
-                    {'platforms': [namespace]},
-                    {'environment.tide.speed_factor': PythonExpression(
-                        expression=['float(', tide_speed_factor, ')']
-                    )},
-                ],
-                remappings=[
-                    (
-                        PathJoinSubstitution([namespace, 'position']),
-                        PathJoinSubstitution([
-                            namespace, 'sensors', 'nav', 'position'
-                        ])
-                    ),
-                    (
-                        PathJoinSubstitution([namespace, 'orientation']),
-                        PathJoinSubstitution([
-                            namespace, 'sensors', 'nav', 'orientation'
-                        ])
-                    ),
-                    (
-                        PathJoinSubstitution([namespace, 'velocity']),
-                        PathJoinSubstitution([
-                            namespace, 'sensors', 'nav', 'velocity'
-                        ])
-                    ),
-                    (
-                        PathJoinSubstitution([namespace, 'throttle']),
-                        PathJoinSubstitution([
-                            namespace, 'control', 'throttle'
-                        ])
-                    ),
-                    (
-                        PathJoinSubstitution([namespace, 'rudder']),
-                        PathJoinSubstitution([
-                            namespace, 'control', 'rudder'
-                        ])
-                    )
-                ]
-            ),
+            OpaqueFunction(function=make_asv_sim_node),
             GroupAction(
                 actions=[
                     SetParameter(
