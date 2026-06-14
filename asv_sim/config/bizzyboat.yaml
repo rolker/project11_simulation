@@ -16,3 +16,17 @@ asv_sim:
     # params (not per-platform); loading this file zeroes the current.
     environment.current.speed: 0.0
     environment.current.noise.speed: 0.0
+
+    # Lake Massabesic datum — a freshwater lake, not a tidal harbor. The
+    # asv_sim Environment defaults to Portsmouth Harbor (ellipsoid_to_mllw
+    # -28.104, msl_above_mllw 1.43, M2/N2/S2 tide), and the Massabesic launch
+    # doesn't load environment.yaml, so without these overrides the lake
+    # surface would sit at the wrong height and swing ~±1.5 m with a phantom
+    # tide. Zero the tidal harmonics (no tide on a lake) and fold the whole
+    # static height into ellipsoid_to_mllw so getEllipsoidalAltitude() returns
+    # a constant 52.3 m — the estimated WGS84 ellipsoidal water-surface height
+    # (matches the boat's GPS altitude). This is what the datum chain consumes
+    # as z(map_tide) for costmap alignment / bathy clearance.
+    environment.tide.constituents.amplitudes: [0.0, 0.0, 0.0]
+    environment.tide.ellipsoid_to_mllw: 52.3
+    environment.tide.msl_above_mllw: 0.0

@@ -243,9 +243,14 @@ class Dynamics(object):
 
             # let's oversimplify the asv to a thin disc
             # I = 1/2 * m * r^2
+            # The yaw_inertia_coefficient (default 1.0) scales this so
+            # the rotational response can be tuned independently of the
+            # forward mass; values below 1.0 shorten the yaw time
+            # constant (faster, less laggy turning).
 
             moment_of_inertia = (
-                self.model.mass
+                self.model.yaw_inertia_coefficient
+                * self.model.mass
                 * pow(self.model.rudder_distance, 2) / 2.0)
 
             angular_acceleration = torque / moment_of_inertia
