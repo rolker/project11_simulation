@@ -18,6 +18,10 @@
 #   launch accel (v~=0)  ~= max_force / mass            -> tuned to ~0.6 m/s^2
 #   go_straight_coefficient = max_force*sin(max_rudder_angle) / max_turn_rate
 #       -> full-throttle + full-steer settles at max_turn_rate
+#   yaw time constant    ~= yaw_inertia_coefficient * mass * rudder_distance
+#                             / (2 * go_straight_coefficient)
+#       -> how FAST the boat reaches its commanded turn rate (responsiveness),
+#          tunable independently of mass and of the steady-state turn rate
 #
 # KNOWN MODEL LIMITATION: drag_coefficient is bound to max_force/max_speed^3, so
 # matching top speed (1.9) AND launch accel (0.6) fixes the cubic drag curve and
@@ -49,11 +53,16 @@ asv_sim:
     models.echoboat240.mass:                190.0    # ~159 kg bare hull + M3/batteries/sensors (operating estimate)
 
     # --- Steering / yaw (vectored) ---
-    models.echoboat240.max_rudder_angle:    33.0     # full steering deflection (deg)
+    models.echoboat240.max_rudder_angle:    45.0     # full vectored deflection (deg); more reflective of the 240's thrust steering than the 33 datasheet rudder figure
     models.echoboat240.max_rudder_change_rate: 60.0  # steering slews quickly (vectored, not a rudder)
-    models.echoboat240.max_turn_rate:       57.0     # deg/s ~= 1.0 rad/s (helm yaw cap; ~0.9 rad/s pivot observed)
+    models.echoboat240.max_turn_rate:       57.0     # deg/s ~= 1.0 rad/s (helm yaw cap; ~0.9 rad/s pivot observed); steady-state turn rate only — responsiveness is set by yaw_inertia_coefficient
     models.echoboat240.rudder_distance:     1.0      # CoG -> thruster, m (2.4 m hull)
     models.echoboat240.rudder_coefficient:  0.25     # prop-branch only (unused for jet)
+    # Yaw responsiveness, decoupled from forward mass (see #73). The thin-disc
+    # inertia (mass*rudder_distance^2/2) gave the 240 a ~0.8 s yaw lag that drove a
+    # line-following limit cycle; 0.3 shortens the yaw time constant to ~0.25 s so
+    # corrections land in phase. 1.0 = unscaled thin-disc default (other platforms).
+    models.echoboat240.yaw_inertia_coefficient: 0.3
 
     # --- Disturbance noise (defaults) ---
     models.echoboat240.thrust_noise:        0.1
