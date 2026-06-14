@@ -22,10 +22,19 @@ public:
   ASVHelm()
   :rclcpp_lifecycle::LifecycleNode("asv_helm")
   {
+    // Per-platform cmd_vel scaling. Defaults are the C-Worker/Ben (cw4) values;
+    // override for other hulls (e.g. echoboat240: 2.0 / 1.0) so cmd_vel maps to
+    // throttle/rudder against the boat's real limits — otherwise the open-loop
+    // rudder (rudder = -yaw/max_yaw_speed) saturates and line-following fails.
+    declare_parameter("max_speed", max_speed_);
+    declare_parameter("max_yaw_speed", max_yaw_speed_);
   }
-  
+
   CallbackReturn on_configure(const rclcpp_lifecycle::State& state) override
   {
+    max_speed_ = get_parameter("max_speed").as_double();
+    max_yaw_speed_ = get_parameter("max_yaw_speed").as_double();
+
     throttle_publisher_ = create_publisher<std_msgs::msg::Float32>("throttle",1);
     rudder_publisher_ = create_publisher<std_msgs::msg::Float32>("rudder",1);
     status_publisher_ = create_publisher<marine_interfaces::msg::Heartbeat>("marine/status/helm",1);

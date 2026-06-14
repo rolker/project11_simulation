@@ -174,6 +174,13 @@ def generate_launch_description():
                     ['/asv_sim', sim_name, 'have_commands']
                 )
             ),
+            # Scale cmd_vel -> throttle/rudder against the boat's real limits.
+            # asv_helm defaults to the cw4/Ben values (2.75 / 0.5); the
+            # EchoBoat 240 does ~2.0 m/s / ~1.0 rad/s (helm_manager in
+            # bizzyboat.yaml), so override for the bizzy platform — otherwise
+            # the open-loop rudder saturates and line-following fails.
+            SetParameter(name='max_speed', value=2.0, condition=is_bizzy),
+            SetParameter(name='max_yaw_speed', value=1.0, condition=is_bizzy),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution([
