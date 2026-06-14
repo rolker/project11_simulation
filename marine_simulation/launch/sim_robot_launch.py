@@ -32,6 +32,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.actions import GroupAction
 from launch.actions import IncludeLaunchDescription
+from launch.actions import OpaqueFunction
 from launch.conditions import IfCondition
 from launch.conditions import UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -53,11 +54,33 @@ def generate_launch_description():
     enable_bridge = LaunchConfiguration('enable_bridge')
     use_sim_time = LaunchConfiguration('use_sim_time')
     drix = LaunchConfiguration('drix')
+    platform = LaunchConfiguration('platform')
     no_sim = LaunchConfiguration('no_sim')
     tide_speed_factor = LaunchConfiguration('tide_speed_factor')
+    mbes_grid_file = LaunchConfiguration('mbes_grid_file')
+
+    # Platform selector. 'ben' (default) brings up ben_core_launch + the cw4
+    # model; 'bizzy' brings up bizzyboat_sim_core_launch + the echoboat240
+    # model (BizzyBoat at Lake Massabesic). The legacy `drix` flag is preserved
+    # for the (currently commented) DRIX path, so is_ben also gates on it.
+    is_ben = IfCondition(PythonExpression(
+        ["'", platform, "' == 'ben' and '", drix, "' == 'false'"]))
+    is_bizzy = IfCondition(PythonExpression(["'", platform, "' == 'bizzy'"]))
 
     namespace_arg = DeclareLaunchArgument(
         'namespace', default_value=TextSubstitution(text='ben')
+    )
+    platform_arg = DeclareLaunchArgument(
+        'platform', default_value=TextSubstitution(text='ben'),
+        description="Simulated platform: 'ben' or 'bizzy'."
+    )
+    mbes_grid_file_arg = DeclareLaunchArgument(
+        'mbes_grid_file',
+        default_value=PathJoinSubstitution([
+            FindPackageShare('mbes_sim'), 'data', 'US5NH02M.tiff'
+        ]),
+        description='Ground-truth bathymetry GeoTIFF for the simulated MBES. '
+        'For BizzyBoat-Massabesic, point this at the Massabesic bathymetry grid.'
     )
     sim_name_arg = DeclareLaunchArgument(
         'sim_name', default_value=namespace
@@ -93,10 +116,28 @@ def generate_launch_description():
                 'ben_core_launch.py'
             ])
         ),
-        condition=UnlessCondition(drix),
+        condition=is_ben,
         launch_arguments={
             'namespace': namespace,
             'enable_bridge': enable_bridge,
+            'is_simulator': 'true',
+        }.items()
+    )
+
+    # BizzyBoat (EchoBoat 240) sim-aware core bringup. Reuses the boat's real
+    # config (nav2_overlay.yaml + base) and layers bizzyboat_sim.yaml under
+    # is_simulator — no config duplication. Mirrors the ben_core include above.
+    launch_bizzy_core_include = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution([
+                FindPackageShare('bizzyboat_project11'),
+                'launch',
+                'bizzyboat_sim_core_launch.py'
+            ])
+        ),
+        condition=is_bizzy,
+        launch_arguments={
+            'namespace': namespace,
             'is_simulator': 'true',
         }.items()
     )
@@ -145,19 +186,61 @@ def generate_launch_description():
         ],
     )
 
+    def make_asv_sim_node(context, *args, **kwargs):
+        # Resolve the namespace to a plain string. asv_sim's `platforms` param
+        # is a STRING_ARRAY, but a single-element list holding a
+        # LaunchConfiguration substitution normalizes to a scalar string
+        # (launch_ros collapses substitution-lists), which fails the node's
+        # type check and crashes it on startup. Resolving here keeps a real
+        # one-element list and fully resolves the remappings.
+        ns = LaunchConfiguration('namespace').perform(context)
+        return [Node(
+            package='asv_sim',
+            executable='asv_sim',
+            name='asv_sim',
+            emulate_tty=True,
+            parameters=[
+                {'platforms': [ns]},
+                {'environment.tide.speed_factor': PythonExpression(
+                    expression=['float(', tide_speed_factor, ')']
+                )},
+            ],
+            remappings=[
+                (ns + '/position', ns + '/sensors/nav/position'),
+                (ns + '/orientation', ns + '/sensors/nav/orientation'),
+                (ns + '/velocity', ns + '/sensors/nav/velocity'),
+                (ns + '/throttle', ns + '/control/throttle'),
+                (ns + '/rudder', ns + '/control/rudder'),
+            ],
+        )]
+
     sim_group = GroupAction(
         actions=[
             SetParametersFromFile(
                 PathJoinSubstitution([
                     FindPackageShare('asv_sim'), 'config', 'cw4.yaml'
                 ]),
-                condition=UnlessCondition(drix)
+                condition=is_ben
             ),
             SetParametersFromFile(
                 PathJoinSubstitution([
                     FindPackageShare('asv_sim'), 'config', 'ben.yaml'
                 ]),
-                condition=UnlessCondition(drix)
+                condition=is_ben
+            ),
+            # BizzyBoat (EchoBoat 240): the echoboat240 hydro model + the
+            # platform spawn (Massabesic pose, no current).
+            SetParametersFromFile(
+                PathJoinSubstitution([
+                    FindPackageShare('asv_sim'), 'config', 'echoboat240.yaml'
+                ]),
+                condition=is_bizzy
+            ),
+            SetParametersFromFile(
+                PathJoinSubstitution([
+                    FindPackageShare('asv_sim'), 'config', 'bizzyboat.yaml'
+                ]),
+                condition=is_bizzy
             ),
             SetParametersFromFile(
                 PathJoinSubstitution([
@@ -171,50 +254,7 @@ def generate_launch_description():
                 ]),
                 condition=IfCondition(drix)
             ),
-            Node(
-                package='asv_sim',
-                executable='asv_sim',
-                name='asv_sim',
-                emulate_tty=True,
-                parameters=[
-                    {'platforms': ['ben']},
-                    {'environment.tide.speed_factor': PythonExpression(
-                        expression=['float(', tide_speed_factor, ')']
-                    )},
-                ],
-                remappings=[
-                    (
-                        PathJoinSubstitution([namespace, 'position']),
-                        PathJoinSubstitution([
-                            namespace, 'sensors', 'nav', 'position'
-                        ])
-                    ),
-                    (
-                        PathJoinSubstitution([namespace, 'orientation']),
-                        PathJoinSubstitution([
-                            namespace, 'sensors', 'nav', 'orientation'
-                        ])
-                    ),
-                    (
-                        PathJoinSubstitution([namespace, 'velocity']),
-                        PathJoinSubstitution([
-                            namespace, 'sensors', 'nav', 'velocity'
-                        ])
-                    ),
-                    (
-                        PathJoinSubstitution([namespace, 'throttle']),
-                        PathJoinSubstitution([
-                            namespace, 'control', 'throttle'
-                        ])
-                    ),
-                    (
-                        PathJoinSubstitution([namespace, 'rudder']),
-                        PathJoinSubstitution([
-                            namespace, 'control', 'rudder'
-                        ])
-                    )
-                ]
-            ),
+            OpaqueFunction(function=make_asv_sim_node),
             GroupAction(
                 actions=[
                     SetParameter(
@@ -226,6 +266,13 @@ def generate_launch_description():
                     SetParameter(
                         name='ping_interval',
                         value=0.2
+                    ),
+                    # Ground-truth bathymetry the simulated MBES samples. For
+                    # BizzyBoat-Massabesic this is the Massabesic grid; the boat's
+                    # costmap starts from only the contour prior (set elsewhere).
+                    SetParameter(
+                        name='grid_file',
+                        value=mbes_grid_file
                     ),
                     SetRemap(
                         src='detections',
@@ -385,10 +432,13 @@ def generate_launch_description():
         enable_bridge_arg,
         use_sim_time_arg,
         drix_arg,
+        platform_arg,
         no_sim_arg,
         tide_speed_factor_arg,
+        mbes_grid_file_arg,
         set_use_sim_time,
         launch_ben_core_include,
+        launch_bizzy_core_include,
         # launch_drix_core_include,
         asv_helm_group,
         sim_group,

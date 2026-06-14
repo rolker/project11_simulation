@@ -1,0 +1,61 @@
+# Model for BizzyBoat — a Seafloor Systems EchoBoat-240 survey ASV.
+#
+# Parameters are tuned to reproduce the 240's measured behavior, not datasheet
+# guesses. Sources:
+#   - bizzyboat_performance.md (current-corrected, pooled across deployments)
+#   - 2026-06-12 deployment odom (/bizzy/odom)
+#   - Seafloor datasheet (hull dims + bare-hull mass)
+#
+# propulsion_type: jet — the asv_sim jet branch (dynamics.py) computes yaw from
+# thrust*sin(steer) with thrust driven by rpm (not hull speed), so the model
+# PIVOTS AT ZERO FORWARD SPEED. That faithfully proxies the 240's vectored
+# thrusters (which can rotate in place under throttle); the prop branch is
+# flow-dependent and would not pivot.
+#
+# How the high-level knobs map to behavior (asv_sim/model.py update_coefficients):
+#   max_force            = max_power / max_speed
+#   drag_coefficient     = max_force / max_speed^3      (thrust == drag at top speed)
+#   launch accel (v~=0)  ~= max_force / mass            -> tuned to ~0.6 m/s^2
+#   go_straight_coefficient = max_force*sin(max_rudder_angle) / max_turn_rate
+#       -> full-throttle + full-steer settles at max_turn_rate
+#
+# KNOWN MODEL LIMITATION: drag_coefficient is bound to max_force/max_speed^3, so
+# matching top speed (1.9) AND launch accel (0.6) fixes the cubic drag curve and
+# yields a coast-down (~0.3 m/s^2 at cruise) somewhat faster than the measured
+# ~0.15 m/s^2. Top speed, turn rate, and launch are matched (the behaviors that
+# matter for the nav/planner sim); coast-down is approximate.
+
+asv_sim:
+  ros__parameters:
+    # --- Propulsion (vectored-thrust proxy) ---
+    models.echoboat240.propulsion_type:     jet
+    models.echoboat240.max_rpm:             3200.0   # abstract engine speed (full throttle)
+    models.echoboat240.idle_rpm:            750.0
+    # Engage above idle so a zero-throttle boat produces NO thrust and holds
+    # station (electric thrusters idle to zero). With engagement <= idle the
+    # jet model feeds idle_rpm thrust and the boat creeps ~1.2 m/s uncommanded.
+    models.echoboat240.clutch_engagement_rpm: 800.0
+    models.echoboat240.gearbox_ratio:       1.0
+    models.echoboat240.max_rpm_change_rate: 1000.0   # ~2.5 s spin-up (hard-launch tau)
+    models.echoboat240.bucket_efficiency:   0.2      # reverse thrust fraction (~1.4 m/s rev)
+    models.echoboat240.bucket_change_rate:  0.5
+
+    # --- Speed / force tuning ---
+    # max_power is a MODEL abstraction (max_force = max_power/max_speed), not the
+    # real electrical power. 217 W -> max_force ~114 N -> ~0.6 m/s^2 launch at
+    # mass 190 kg, and equilibrium top speed 1.9 m/s.
+    models.echoboat240.max_speed:           1.9      # m/s STW, current-corrected
+    models.echoboat240.max_power:           217.0
+    models.echoboat240.mass:                190.0    # ~159 kg bare hull + M3/batteries/sensors (operating estimate)
+
+    # --- Steering / yaw (vectored) ---
+    models.echoboat240.max_rudder_angle:    33.0     # full steering deflection (deg)
+    models.echoboat240.max_rudder_change_rate: 60.0  # steering slews quickly (vectored, not a rudder)
+    models.echoboat240.max_turn_rate:       57.0     # deg/s ~= 1.0 rad/s (helm yaw cap; ~0.9 rad/s pivot observed)
+    models.echoboat240.rudder_distance:     1.0      # CoG -> thruster, m (2.4 m hull)
+    models.echoboat240.rudder_coefficient:  0.25     # prop-branch only (unused for jet)
+
+    # --- Disturbance noise (defaults) ---
+    models.echoboat240.thrust_noise:        0.1
+    models.echoboat240.yaw_rate_noise:      0.1
+    models.echoboat240.drag_noise:          0.1
