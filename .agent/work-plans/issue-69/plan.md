@@ -54,14 +54,19 @@ already generic (parameterized by `robot_namespace`) and brings up
 | If we change... | Also update... | Included? |
 |---|---|---|
 | Sim now launches CAMP | Operator should stop running CAMP separately (avoid two instances) | Yes — documented in docstring |
-| `background_chart=''` passed to operator_ui/CAMP | Confirm CAMP tolerates an empty chart (else adjust) | Open Question 1 |
+| `background_chart=''` passed to operator_ui/CAMP | If CAMP rejects empty, fix CAMP's empty-tolerance (sibling PR on `rolker/camp`), not supply a chart | Open Question 1 |
 | Ben path | Must stay unaffected (only the bizzy entry changes) | Yes (separate file) |
 
 ## Open Questions
 
-1. Does `operator_ui_launch` / CAMP tolerate `background_chart=''` (no chart)?
-   If it errors on empty, fall back (omit the arg to use CAMP's own default, or
-   point at `~/data/test_charts/massabesic_rgba.tif`). Confirm at run.
+1. **Resolved (direction, per Roland):** pass `background_chart=''` (no chart). If
+   CAMP (`camp/CCOMAutonomousMissionPlanner`, which receives it as a positional
+   argv from `operator_ui_launch`) does NOT tolerate an empty background chart,
+   **fix the empty-tolerance in CAMP** rather than supplying a chart — the new
+   CAMP map code is removing background charts wholesale, so "no background chart"
+   is the correct long-term behavior. That fix would be a small cross-repo change
+   in `rolker/camp` (the original `camp/`, not the `camp2/` test framework). Tested
+   at implementation run; if a CAMP fix is needed it can be a sibling PR.
 
 ## Estimated Scope
 
