@@ -93,6 +93,14 @@ class Model:
             self.ns('rudder_coefficient'), 0.25,
             ParameterDescriptor(
                 description='Expresses rudder efficiency'))
+        node.declare_parameter(
+            self.ns('yaw_inertia_coefficient'), 1.0,
+            ParameterDescriptor(
+                description='Multiplier on the rotational moment of '
+                'inertia (jet model), decoupling yaw responsiveness '
+                'from forward mass. 1.0 keeps the thin-disc default; '
+                'values below 1.0 shorten the yaw time constant so the '
+                'boat reaches its commanded turn rate faster.'))
 
         node.declare_parameter(
             self.ns('thrust_noise'), 0.1,
@@ -169,6 +177,8 @@ class Model:
             if param.name == self.ns('rudder_coefficient'):
                 self.rudder_coefficient = param.value
                 need_update = True
+            if param.name == self.ns('yaw_inertia_coefficient'):
+                self.yaw_inertia_coefficient = param.value
             if param.name == self.ns('thrust_noise'):
                 self.thrust_noise = param.value
                 need_update = True
