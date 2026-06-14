@@ -59,14 +59,14 @@ already generic (parameterized by `robot_namespace`) and brings up
 
 ## Open Questions
 
-1. **Resolved (direction, per Roland):** pass `background_chart=''` (no chart). If
-   CAMP (`camp/CCOMAutonomousMissionPlanner`, which receives it as a positional
-   argv from `operator_ui_launch`) does NOT tolerate an empty background chart,
-   **fix the empty-tolerance in CAMP** rather than supplying a chart — the new
-   CAMP map code is removing background charts wholesale, so "no background chart"
-   is the correct long-term behavior. That fix would be a small cross-repo change
-   in `rolker/camp` (the original `camp/`, not the `camp2/` test framework). Tested
-   at implementation run; if a CAMP fix is needed it can be a sibling PR.
+1. **Resolved + confirmed needed.** Pass `background_chart=''` (no chart). CAMP's
+   arg loop (`camp/src/camp/main.cpp:27-38`) has **no empty guard**: the workspace
+   dir → `setWorkspace`, but an empty background arg falls to `else` →
+   `openBackground('')` (loads an empty chart). So the **CAMP empty-tolerance fix
+   IS required** — a one-line skip-empty-args guard in `main.cpp` — done as a
+   **sibling PR on `rolker/camp`** (the correct, long-term behavior since the new
+   map code drops background charts wholesale). This sim PR's CAMP-via-empty-chart
+   only works cleanly once that lands.
 
 ## Estimated Scope
 

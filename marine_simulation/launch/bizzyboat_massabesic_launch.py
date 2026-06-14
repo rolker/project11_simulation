@@ -19,8 +19,11 @@ def generate_launch_description():
     costmap 0.5 m / 350 m — the 2026-06-12 field changes), so this reproduces the
     "planner won't plan beyond the local costmap" setup.
 
-    The operator/RViz station and bag recording (simulator_launch.py extras) are
-    not included here yet — run them separately or add as a follow-up.
+    Also brings up the operator station for `bizzy` (via sim_operator_launch):
+    `command_bridge_sender` (so CAMP's piloting-mode commands reach helm_manager)
+    and CAMP itself — no background chart, no RViz. Because this launches CAMP, do
+    NOT run a separate CAMP instance alongside it. Bag recording (a
+    simulator_launch.py extra) is still not included here.
     """
     mbes_grid_file = LaunchConfiguration('mbes_grid_file')
     mbes_grid_file_arg = DeclareLaunchArgument(
@@ -51,6 +54,27 @@ def generate_launch_description():
                 'sim_name': 'bizzy',
                 'enable_bridge': 'false',
                 'mbes_grid_file': mbes_grid_file,
+            }.items()
+        ),
+
+        # Operator station for bizzy (mirrors simulator_launch.py:103-123):
+        # command_bridge_sender (robot ns) + CAMP, on the one sim ROS graph, so
+        # CAMP's piloting-mode commands reach helm_manager. No udp_bridge needed
+        # (single domain), no background chart, no RViz.
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                PathJoinSubstitution([
+                    FindPackageShare('marine_simulation'),
+                    'launch',
+                    'sim_operator_launch.py'
+                ])
+            ),
+            launch_arguments={
+                'robot_namespace': 'bizzy',
+                'operator_namespace': 'operator',
+                'enable_bridge': 'false',
+                'background_chart': '',
+                'rviz': 'false',
             }.items()
         ),
     ])
