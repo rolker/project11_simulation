@@ -24,9 +24,13 @@ asv_sim:
     # surface would sit at the wrong height and swing ~±1.5 m with a phantom
     # tide. Zero the tidal harmonics (no tide on a lake) and fold the whole
     # static height into ellipsoid_to_mllw so getEllipsoidalAltitude() returns
-    # a constant 52.3 m — the estimated WGS84 ellipsoidal water-surface height
-    # (matches the boat's GPS altitude). This is what the datum chain consumes
-    # as z(map_tide) for costmap alignment / bathy clearance.
+    # a constant 48.88 m — the full-pool WGS84 ellipsoidal water-surface height.
+    # This is the single source of truth defined for the real boat in
+    # unh_echoboats_project11/bizzyboat_project11/config/massabesic_datum_polygons.yaml
+    # (chart_datum_z: 48.88); the sim must match it so z(map_tide) — consumed by
+    # the datum chain for costmap alignment / bathy clearance — agrees with the
+    # field. (Cross-checked: the NH GRANIT contour chart prior and the M3 survey
+    # draft agree to ~4 cm in mean ellipsoidal height at this datum.)
     environment.tide.constituents.amplitudes: [0.0, 0.0, 0.0]
-    environment.tide.ellipsoid_to_mllw: 52.3
+    environment.tide.ellipsoid_to_mllw: 48.88
     environment.tide.msl_above_mllw: 0.0
