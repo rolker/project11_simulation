@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<robot xmlns:xacro="http://ros.org/wiki/xacro" xmlns:gz="http://gazebosim.org/schema">
+  <!-- Macro to insert a Multibeam Echosounder ROS integration
+    name: Prefix used for naming.
+    x: X position of the sonar (from the base_link).
+    y: Y position of the sonar (from the base_link).
+    z: Z position of the sonar (from the base_link).
+    R: Roll orientation of the sonar (from the sonar's origin).
+    P: Pitch orientation of the sonar (from the sonar's origin).
+    Y: Yaw orientation of the sonar (from the sonar's origin).
+    post_Y: Yaw orientation of the post (from the post's origin).
+    post_z_from: Z position of the post's base.
+    update_rate: frequency to publish output, hz
+  -->
+  <xacro:macro name="wamv_bathymetric_multibeam_sonar" params="name
+                                            x:=0.0 y:=0 z:=0.0
+                                            R:=0 P:=${radians(90)} Y:=0
+                                            post_Y:=0 post_z_from:=1.2965
+                                            update_rate:=2
+                                            beam_count:=256
+                                            range_min:=0.5
+                                            range_max:=50.0
+                                            angle_min:=${radians(-60)}
+                                            angle_max:=${radians(60)}
+                                            sonar_frequency:=200000.0
+                                            sound_speed:=1500.0">
+    <!-- Define length variables for link positioning -->
+    <xacro:property name="platform_z" value="${post_z_from}"/>
+    <xacro:property name="post_to_post_arm_x" value="0.03"/>
+    <xacro:property name="post_arm_to_sonar_x" value="0.04"/>
+    <xacro:property name="post_arm_to_sonar_z" value="0.05"/>
+
+    <!-- multibeam sonar sensor -->
+    <link name="${namespace}/${name}_link">
+      <visual>
+        <origin xyz="0 0 0.0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.1 0.2 0.2"/>
+        </geometry>
+      </visual>
+      <collision name="${name}_collision">
+        <geometry>
+          <box size="0.1 0.2 0.2"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="1"/>
+        <inertia
+          ixx="0.00109375"
+          iyy="0.00109375"
+          izz="0.00125"
+          ixy="0"
+          ixz="0"
+          iyz="0"/>
+      </inertial>
+    </link>
+
+    <!-- Define post length and mass based on desired z position of sensor -->
+    <xacro:property name="post_length" value="${platform_z-z-post_arm_to_sonar_z}"/>
+    <xacro:property name="post_mass_per_meter" value="0.9"/>
+    <xacro:property name="post_mass" value="${post_mass_per_meter * post_length}"/>
+    <xacro:property name="post_radius" value="0.0076"/>
+
+    <!-- Sensor post -->
+    <link name="${namespace}/${name}_post_link">
+      <visual>
+        <geometry>
+          <cylinder radius="${post_radius}" length="${post_length}"/>
+        </geometry>
+        <material name="${name}_post_material">
+          <color rgba="0.0 0.0 0.0 1.0"/>
+        </material>
+      </visual>
+      <collision name="${name}_post_collision">
+        <geometry>
+          <cylinder radius="${post_radius}" length="${post_length}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="${post_mass}"/>
+        <inertia
+          ixx="${(post_mass/12) * (3*post_radius*post_radius + post_length*post_length)}"
+          iyy="${(post_mass/12) * (3*post_radius*post_radius + post_length*post_length)}"
+          izz="${(post_mass/2) * (post_radius*post_radius)}"
+          ixy="0"
+          ixz="0"
+          iyz="0"/>
+      </inertial>
+    </link>
+
+    <!-- Sensor post arm -->
+    <link name="${namespace}/${name}_post_arm_link">
+      <visual name="${name}_post_arm_visual">
+        <origin xyz="-0.038 0 -0.003" rpy="${radians(-60)} 0 ${-pi/2}"/>
+        <geometry>
+          <mesh filename="package://vrx_gazebo/models/sensor_post/mesh/sensor_post_arm.dae"/>
+        </geometry>
+      </visual>
+      <collision name="${name}_post_arm_collision">
+        <origin xyz="0 0 0" rpy="${radians(-60)-pi/20} 0 ${-pi/2}"/>
+        <geometry>
+          <cylinder radius="0.008" length="0.065"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <origin xyz="0 0 0" rpy="${radians(-60)-pi/20} 0 ${-pi/2}"/>
+        <mass value="0.1"/>
+        <inertia
+          ixx="0.00003680833"
+          iyy="0.00003680833"
+          izz="0.00000320000"
+          ixy="0"
+          ixz="0"
+          iyz="0"/>
+      </inertial>
+    </link>
+
+    <!-- Base to sensor post joint -->
+    <xacro:property name="post_z" value="${platform_z-post_length/2}"/>
+    <xacro:property name="post_to_sonar_x" value="${post_to_post_arm_x+post_arm_to_sonar_x}"/>
+    <joint name="${namespace}/base_to_${name}_post_joint" type="fixed">
+      <origin xyz="${x-(post_to_sonar_x)*cos(post_Y)} ${y-(post_to_sonar_x)*sin(post_Y)} ${post_z}" rpy="0 0 ${post_Y}" />
+      <parent link="${namespace}/base_link" />
+      <child link="${namespace}/${name}_post_link" />
+    </joint>
+
+    <!-- Sensor post to sensor post arm joint -->
+    <joint name="${namespace}/${name}_post_to_${name}_post_arm_joint" type="fixed">
+      <origin xyz="${post_to_post_arm_x} 0 ${z-post_z-post_arm_to_sonar_z}" rpy="0 0 0" />
+      <parent link="${namespace}/${name}_post_link" />
+      <child link="${namespace}/${name}_post_arm_link" />
+    </joint>
+
+    <!-- Sensor post arm to sonar joint -->
+    <joint name="${namespace}/${name}_post_arm_to_${name}_joint" type="fixed">
+      <origin xyz="${post_arm_to_sonar_x} 0 ${post_arm_to_sonar_z}" rpy="${R} ${P} ${Y-post_Y}" />
+      <parent link="${namespace}/${name}_post_arm_link" />
+      <child link="${namespace}/${name}_link" />
+    </joint>
+
+    <gazebo reference="${namespace}/${name}_link">
+      <visual>
+        <material>
+          <diffuse>1.0 1.0 1.0</diffuse>
+          <specular>1.0 1.0 1.0</specular>
+          <pbr>
+            <metal>
+              <albedo_map>model://vrx_gazebo/models/3d_lidar/mesh/3d_Lidar_Albedo.png</albedo_map>
+              <normal_map>model://vrx_gazebo/models/3d_lidar/mesh/3d_Lidar_Normal.png</normal_map>
+              <roughness_map>model://vrx_gazebo/models/3d_lidar/mesh/3d_Lidar_Roughness.png</roughness_map>
+              <metalness_map>model://vrx_gazebo/models/3d_lidar/mesh/3d_Lidar_Metalness.png</metalness_map>
+            </metal>
+          </pbr>
+        </material>
+      </visual>
+    </gazebo>
+
+    <gazebo>
+      <plugin
+        filename="bathymetric_multibeam_sonar_system"
+        name="custom::BathymetricMultibeamSonarSystem">
+      </plugin>
+    </gazebo>
+
+    <gazebo reference="${namespace}/${name}_link">
+      <sensor type="custom" name="${name}_sensor" gz:type="bathymetric_multibeam_sonar">
+        <always_on>true</always_on>
+        <update_rate>${update_rate}</update_rate>
+        <topic>${namespace}/${name}/sonar_data</topic>
+        <visualize>true</visualize>
+        <gz:bathymetric_multibeam_sonar>
+          <frequency>${sonar_frequency}</frequency>
+          <sound_speed>${sound_speed}</sound_speed>
+          <minimum_range>${range_min}</minimum_range>
+          <maximum_range>${range_max}</maximum_range>
+          <beam_count>${beam_count}</beam_count>
+          <minimum_beam_angle>${angle_min}</minimum_beam_angle>
+          <maximum_beam_angle>${angle_max}</maximum_beam_angle>
+        </gz:bathymetric_multibeam_sonar>
+      </sensor>
+    </gazebo>
+
+  </xacro:macro>
+</robot>
