@@ -47,16 +47,9 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
-    background_chart = LaunchConfiguration('background_chart')
     enable_bridge = LaunchConfiguration('enable_bridge')
     record_bag = LaunchConfiguration('record_bag')
     bag_directory = LaunchConfiguration('bag_directory')
-
-    background_chart_arg = DeclareLaunchArgument(
-        'background_chart', default_value=PathJoinSubstitution(
-            [FindPackageShare('camp'), 'workspace', '13283', '13283_2.KAP']
-        )
-    )
 
     enable_bridge_arg = DeclareLaunchArgument(
         'enable_bridge', default_value=TextSubstitution(text='false')
@@ -112,7 +105,6 @@ def generate_launch_description():
                     'robot_namespace': 'ben',
                     'operator_namespace': 'operator',
                     'enable_bridge': 'false',
-                    'background_chart': background_chart,
                     'rviz': 'true',
                     'rviz_configuration': PathJoinSubstitution([
                         FindPackageShare('ben_project11'),
@@ -152,7 +144,6 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        background_chart_arg,
         enable_bridge_arg,
         record_bag_arg,
         bag_directory_arg,
