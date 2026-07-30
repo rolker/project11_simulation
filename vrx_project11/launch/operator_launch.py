@@ -25,10 +25,6 @@ def generate_launch_description():
             "robot_namespace",
             default_value=TextSubstitution(text="wamv")
         ),
-        DeclareLaunchArgument(
-            "background_chart",
-            default_value=PathJoinSubstitution([ FindPackageShare('camp'), 'workspace','australia', 'SydneyInternationalRegattaCenter.pdf'])
-        ),
         SetParameter(
             name='use_sim_time',
             value=True
@@ -54,7 +50,6 @@ def generate_launch_description():
                     launch_arguments={
                         'namespace': namespace,
                         'robot_namespace': robot_namespace,
-                        'background_chart': LaunchConfiguration('background_chart'),
                     }.items()
                 ),
             ]

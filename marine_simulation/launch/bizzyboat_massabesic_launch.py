@@ -73,7 +73,6 @@ def generate_launch_description():
                 'robot_namespace': 'bizzy',
                 'operator_namespace': 'operator',
                 'enable_bridge': 'false',
-                'background_chart': '',
                 'rviz': 'false',
             }.items()
         ),

@@ -45,7 +45,6 @@ def generate_launch_description():
     robot_namespace = LaunchConfiguration('robot_namespace')
     operator_namespace = LaunchConfiguration('operator_namespace')
     enable_bridge = LaunchConfiguration('enable_bridge')
-    background_chart = LaunchConfiguration('background_chart')
     use_sim_time = LaunchConfiguration('use_sim_time')
     rviz = LaunchConfiguration('rviz')
     rviz_configuration = LaunchConfiguration('rviz_configuration')
@@ -56,13 +55,6 @@ def generate_launch_description():
     operator_namespace_arg = DeclareLaunchArgument(
         'operator_namespace',
         default_value=TextSubstitution(text='operator')
-    )
-    background_chart_arg = DeclareLaunchArgument(
-        'background_chart',
-        default_value=PathJoinSubstitution([
-            get_package_share_directory('camp'),
-            'workspace', '13283', '13283_2.KAP'
-        ])
     )
     enable_bridge_arg = DeclareLaunchArgument(
         'enable_bridge', default_value=TextSubstitution(text='false')
@@ -109,7 +101,6 @@ def generate_launch_description():
         ),
         launch_arguments={
             'namespace': operator_namespace,
-            'background_chart': background_chart,
             'rviz': rviz,
             'rviz_configuration': rviz_configuration
         }.items()
@@ -125,7 +116,6 @@ def generate_launch_description():
     return LaunchDescription([
         robot_namespace_arg,
         operator_namespace_arg,
-        background_chart_arg,
         enable_bridge_arg,
         use_sim_time_arg,
         rviz_arg,

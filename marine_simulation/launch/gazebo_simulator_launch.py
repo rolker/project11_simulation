@@ -56,15 +56,10 @@ from lifecycle_msgs.msg import Transition
 
 def generate_launch_description():
     namespace = LaunchConfiguration('namespace')
-    background_chart = LaunchConfiguration('background_chart')
     enable_bridge = LaunchConfiguration('enable_bridge')
 
     namespace_arg = DeclareLaunchArgument(
         'namespace', default_value=TextSubstitution(text='ben'))
-    background_chart_arg = DeclareLaunchArgument(
-        'background_chart', default_value=PathJoinSubstitution(
-            [FindPackageShare('camp'), 'workspace', '13283', '13283_2.KAP']
-        ))
     enable_bridge_arg = DeclareLaunchArgument(
         'enable_bridge', default_value=TextSubstitution(text='false'))
 
@@ -146,7 +141,6 @@ def generate_launch_description():
             'robot_namespace': namespace,
             'operator_namespace': 'operator',
             'enable_bridge': enable_bridge,
-            'background_chart': background_chart,
             'use_sim_time': 'true',
             'rviz': 'true',
             'rviz_configuration': PathJoinSubstitution([
@@ -159,7 +153,6 @@ def generate_launch_description():
 
     return LaunchDescription([
         namespace_arg,
-        background_chart_arg,
         enable_bridge_arg,
         gazebo_ben,
         ben_core,
