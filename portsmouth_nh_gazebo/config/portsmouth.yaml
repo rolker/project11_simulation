@@ -12,3 +12,5 @@ grid_power: 10   # 1025x1025 (~3.2 m/cell)
 osm: true
 
 waves: true
+
+max_trees: 0
